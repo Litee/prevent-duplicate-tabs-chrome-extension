@@ -4,8 +4,8 @@
     "watch": "parcel watch src/*.ts"
   },
   "devDependencies": {
-    "@types/chrome": "0.0.83",
+    "@types/chrome": "^0.0.83",
     "parcel-bundler": "^1.12.3",
-    "typescript": "^3.4.5"
+    "typescript": "^3.5.3"
   }
 }
