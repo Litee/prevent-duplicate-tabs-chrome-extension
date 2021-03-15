@@ -15,7 +15,9 @@ Ping me if you liked this extension and I may consider publishing it into Chrome
 
 ## TODOs
 
-* Support white lists
+* Support white lists.
+* An alternative strategy: ask about whether to de-duplicate.
+* Allow to safely duplicate tabs via context menu.
 
 ## Disclaimers
 
