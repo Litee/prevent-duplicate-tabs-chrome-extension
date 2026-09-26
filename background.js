@@ -71,10 +71,15 @@ function normalizeUrl(url) {
     return parsed.toString();
 }
 
+// Tab ids grow over a browser session, so the smallest id is the oldest tab.
+function byAge(a, b) {
+    return a.id - b.id;
+}
+
 function deduplicateExistingTabs() {
     chrome.tabs.query({}, tabs => {
         const alreadyEncounteredTabUrls = new Set();
-        tabs.forEach(tab => {
+        tabs.sort(byAge).forEach(tab => {
             if (!tab.url || tab.id === undefined) return;
             const key = normalizeUrl(tab.url);
             if (alreadyEncounteredTabUrls.has(key)) {
@@ -90,9 +95,9 @@ function deduplicateExistingTabs() {
 function verifyAndDeduplicate(currentTabId, currentTabUrl) {
     chrome.tabs.query({}, tabs => {
         const key = normalizeUrl(currentTabUrl);
-        const duplicates = tabs.filter(t => t.id !== currentTabId && t.url && normalizeUrl(t.url) === key);
-        // Keep the most recently existing tab, matching the original behavior.
-        const duplicate = duplicates[duplicates.length - 1];
+        const duplicate = tabs
+            .filter(t => t.id !== undefined && t.id !== currentTabId && t.url && normalizeUrl(t.url) === key)
+            .sort(byAge)[0];
         if (!duplicate || duplicate.id === undefined) return;
 
         chrome.tabs.update(duplicate.id, { active: true });
