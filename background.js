@@ -6,10 +6,10 @@ let stateLoaded = false;
 // on/off switch and counter are persisted in chrome.storage.local. All state
 // mutations wait for `stateReady` so a write never lands before the persisted
 // values have been loaded (which would overwrite them with stale defaults).
-const stateReady = new Promise<void>(resolve => {
+const stateReady = new Promise(resolve => {
     chrome.storage.local.get(['active', 'preventedDuplicatesCount'], stored => {
-        active = (stored.active as boolean | undefined) ?? true;
-        preventedDuplicatesCount = (stored.preventedDuplicatesCount as number | undefined) ?? 0;
+        active = stored.active ?? true;
+        preventedDuplicatesCount = stored.preventedDuplicatesCount ?? 0;
         stateLoaded = true;
         updateBadge();
         resolve();
@@ -48,7 +48,7 @@ chrome.tabs.onUpdated.addListener((updatedTabId, updateInfo) => {
 
 function deduplicateExistingTabs() {
     chrome.tabs.query({}, tabs => {
-        const alreadyEncounteredTabUrls = new Set<string>();
+        const alreadyEncounteredTabUrls = new Set();
         tabs.forEach(tab => {
             if (!tab.url || tab.id === undefined) return;
             if (alreadyEncounteredTabUrls.has(tab.url)) {
@@ -61,7 +61,7 @@ function deduplicateExistingTabs() {
     });
 }
 
-function verifyAndDeduplicate(currentTabId: number, currentTabUrl: string) {
+function verifyAndDeduplicate(currentTabId, currentTabUrl) {
     chrome.tabs.query({}, tabs => {
         const duplicates = tabs.filter(t => t.id !== currentTabId && t.url === currentTabUrl);
         // Keep the most recently existing tab, matching the original behavior.

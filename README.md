@@ -6,19 +6,18 @@ The extension uses [Manifest V3](https://developer.chrome.com/docs/extensions/mv
 
 ## How to install
 
-1. (optional, for people with healthy paranoia) This project is very simple, so just look at its files here https://github.com/Litee/prevent-duplicate-tabs-chrome-extension. Check `manifest.json`, `src/background.ts` and `popup.html`.
+1. (optional, for people with healthy paranoia) This project is very simple, so just look at its files here https://github.com/Litee/prevent-duplicate-tabs-chrome-extension. Check `manifest.json`, `background.js` and `popup.html`.
 1. Clone extension to your machine - e.g. `git clone https://github.com/Litee/prevent-duplicate-tabs-chrome-extension.git`
-1. Install dependencies with `npm install`
-1. Build the project using `npm run build`
 1. Open chrome://extensions tab in your Chrome browser
 1. Activate developer mode (required for next step)
 1. Install extension as unpacked
 
+No build step is needed: the extension is plain JavaScript.
+
 ## How to update
 
-1. (optional, for people with healthy paranoia) This project is very simple, so just look at its files here https://github.com/Litee/prevent-duplicate-tabs-chrome-extension. Check `manifest.json`, `src/background.ts` and `popup.html`.
+1. (optional, for people with healthy paranoia) This project is very simple, so just look at its files here https://github.com/Litee/prevent-duplicate-tabs-chrome-extension. Check `manifest.json`, `background.js` and `popup.html`.
 1. Run `git pull` from within the extension project folder.
-1. Install dependencies with `npm install` (in case new ones appeared) and build the project using `npm run build`.
 1. Go to the extension view in Chrome and click "Update" button.
 
 ## TODOs
