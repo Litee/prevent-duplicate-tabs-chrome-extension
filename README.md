@@ -31,6 +31,8 @@ No build step is needed: the extension is plain JavaScript.
 * "Deduplicate existing tabs" never closes pinned tabs, and the popup tells you how many pinned duplicates it kept.
 * The existing tab you are switched to is not reloaded, so its scroll position and unsaved input stay as they were.
 
+When you are switched to an existing tab, a large green "Switched to existing tab" notice appears on that page for a few seconds. The `scripting` permission and access to all sites are used only for this notice. It can't appear on pages where extensions can't run scripts, such as `chrome://` pages and the Chrome Web Store.
+
 ## TODOs
 
 * Support white lists.

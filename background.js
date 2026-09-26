@@ -155,6 +155,49 @@ async function verifyAndDeduplicate(currentTabId, currentTabUrl) {
     }
     preventedDuplicatesCount++;
     persistState();
+    showSwitchedNotice(oldest.id);
+}
+
+// Shows a large green "Switched to existing tab" notice on the page for a few
+// seconds. Pages where scripts cannot run (chrome://, Chrome Web Store, ...)
+// are skipped silently; the badge counter still goes up.
+function showSwitchedNotice(tabId) {
+    chrome.scripting.executeScript({
+        target: { tabId },
+        func: () => {
+            const id = '__prevent_duplicate_tabs_notice__';
+            document.getElementById(id)?.remove();
+            const el = document.createElement('div');
+            el.id = id;
+            el.textContent = 'Switched to existing tab';
+            Object.assign(el.style, {
+                position: 'fixed',
+                top: '32px',
+                right: '32px',
+                zIndex: '2147483647',
+                padding: '16px 24px',
+                background: 'rgba(52, 199, 89, 0.95)',
+                color: 'white',
+                font: "500 26px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
+                borderRadius: '16px',
+                boxShadow: '0 8px 28px rgba(0, 0, 0, 0.18)',
+                pointerEvents: 'none',
+                opacity: '0',
+                transform: 'translateY(-12px)',
+                transition: 'opacity 140ms ease, transform 140ms ease',
+            });
+            document.documentElement.appendChild(el);
+            requestAnimationFrame(() => {
+                el.style.opacity = '1';
+                el.style.transform = 'translateY(0)';
+            });
+            setTimeout(() => {
+                el.style.opacity = '0';
+                el.style.transform = 'translateY(-12px)';
+                setTimeout(() => el.remove(), 240);
+            }, 2400);
+        },
+    }).catch(() => {});
 }
 
 function persistState() {
