@@ -26,6 +26,7 @@ No build step is needed: the extension is plain JavaScript.
 * `https://example.com` and `https://example.com/` are the same page.
 * Every view of a GitHub pull request (`/files`, `/commits`, `/checks`, comment links) counts as the same pull request.
 * Query strings are compared, so different searches stay in separate tabs.
+* The oldest tab is always the one that is kept.
 
 ## TODOs
 
