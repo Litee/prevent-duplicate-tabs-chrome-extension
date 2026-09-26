@@ -1,11 +1,14 @@
 {
+  "name": "prevent-duplicate-tabs",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Chrome extension that detects when a duplicate tab is opened and activates already existing tab",
   "scripts": {
-    "build": "parcel build src/*.ts",
-    "watch": "parcel watch src/*.ts"
+    "build": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\" && tsc",
+    "watch": "tsc --watch"
   },
   "devDependencies": {
-    "@types/chrome": "^0.0.180",
-    "parcel": "^2.0.0",
-    "typescript": "^4.6.3"
+    "@types/chrome": "^0.0.332",
+    "typescript": "^5.9.3"
   }
 }

@@ -1,67 +1,100 @@
 let preventedDuplicatesCount = 0;
 let active = true;
+let stateLoaded = false;
 
-chrome.browserAction.setBadgeBackgroundColor({
-    color: '#933EC5'
+// MV3 service workers can be terminated and restarted at any time, so the
+// on/off switch and counter are persisted in chrome.storage.local. All state
+// mutations wait for `stateReady` so a write never lands before the persisted
+// values have been loaded (which would overwrite them with stale defaults).
+const stateReady = new Promise<void>(resolve => {
+    chrome.storage.local.get(['active', 'preventedDuplicatesCount'], stored => {
+        active = (stored.active as boolean | undefined) ?? true;
+        preventedDuplicatesCount = (stored.preventedDuplicatesCount as number | undefined) ?? 0;
+        stateLoaded = true;
+        updateBadge();
+        resolve();
+    });
 });
 
-chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+chrome.action.setBadgeBackgroundColor({ color: '#933EC5' });
+
+chrome.runtime.onMessage.addListener((request, _sender, _sendResponse) => {
     if (request.action === 'TurnOnOff') {
-        active = !active;
-        updateBadge();
+        void stateReady.then(() => {
+            active = !active;
+            persistState();
+        });
     }
     else if (request.action === 'Deduplicate') {
-        chrome.tabs.query({}, tabs => {
-            const alreadyEncounteredTabUrls = new Set();
-            tabs.forEach(tab => {
-                if (alreadyEncounteredTabUrls.has(tab.url)) {
-                    chrome.tabs.remove(tab.id);
-                    preventedDuplicatesCount++;
-                }
-                alreadyEncounteredTabUrls.add(tab.url);
-            });
-            updateBadge();
+        void stateReady.then(() => {
+            deduplicateExistingTabs();
         });
     }
 });
 
 chrome.tabs.onCreated.addListener(newTab => {
-    if (active && newTab.url) {
-        verifyAndDeduplicate(newTab.id, newTab.url);
+    if (!stateLoaded || !active || newTab.id === undefined || !newTab.url) {
+        return;
     }
+    verifyAndDeduplicate(newTab.id, newTab.url);
 });
 
-chrome.tabs.onUpdated.addListener((updatedTabId, updateInfo, updatedTab) => {
-    if (active && updateInfo.url) {
-        verifyAndDeduplicate(updatedTabId, updateInfo.url);
+chrome.tabs.onUpdated.addListener((updatedTabId, updateInfo) => {
+    if (!stateLoaded || !active || !updateInfo.url) {
+        return;
     }
+    verifyAndDeduplicate(updatedTabId, updateInfo.url);
 });
 
-function verifyAndDeduplicate(currentTabId, currentTabUrl) {
+function deduplicateExistingTabs() {
     chrome.tabs.query({}, tabs => {
-        let duplicateTab = null;
-        tabs.forEach(otherTab => {
-            if (otherTab.id !== currentTabId && otherTab.url === currentTabUrl) {
-                duplicateTab = otherTab;
+        const alreadyEncounteredTabUrls = new Set<string>();
+        tabs.forEach(tab => {
+            if (!tab.url || tab.id === undefined) return;
+            if (alreadyEncounteredTabUrls.has(tab.url)) {
+                chrome.tabs.remove(tab.id);
+                preventedDuplicatesCount++;
             }
+            alreadyEncounteredTabUrls.add(tab.url);
         });
-        if (duplicateTab) {
-            chrome.tabs.update(duplicateTab.id, {
-                "active": true
-            });
-            chrome.windows.update(duplicateTab.windowId, {
-                focused: true
-            });
-            chrome.tabs.reload(duplicateTab.id);
-            chrome.tabs.remove(currentTabId);
-            preventedDuplicatesCount++;
-            updateBadge();
-        }
+        persistState();
     });
 }
 
-function updateBadge() {
-    chrome.browserAction.setBadgeText({
-        text: active ? (preventedDuplicatesCount > 0 ? `${preventedDuplicatesCount}` : '') : 'OFF'
+function verifyAndDeduplicate(currentTabId: number, currentTabUrl: string) {
+    chrome.tabs.query({}, tabs => {
+        const duplicates = tabs.filter(t => t.id !== currentTabId && t.url === currentTabUrl);
+        // Keep the most recently existing tab, matching the original behavior.
+        const duplicate = duplicates[duplicates.length - 1];
+        if (!duplicate || duplicate.id === undefined) return;
+
+        chrome.tabs.update(duplicate.id, { active: true });
+        if (duplicate.windowId !== undefined) {
+            chrome.windows.update(duplicate.windowId, { focused: true });
+        }
+        chrome.tabs.reload(duplicate.id);
+        chrome.tabs.remove(currentTabId);
+        preventedDuplicatesCount++;
+        persistState();
     });
+}
+
+function persistState() {
+    chrome.storage.local.set({
+        active,
+        preventedDuplicatesCount
+    });
+    updateBadge();
+}
+
+function updateBadge() {
+    let text = '';
+    if (active) {
+        // Chrome truncates badge text to ~4 characters.
+        text = preventedDuplicatesCount >= 1000 ? '999+' : `${preventedDuplicatesCount}`;
+    }
+    else {
+        text = 'OFF';
+    }
+    chrome.action.setBadgeText({ text });
 }
