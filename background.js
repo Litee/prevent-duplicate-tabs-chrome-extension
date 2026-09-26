@@ -103,11 +103,17 @@ async function deduplicateExistingTabs() {
     const tabs = (await chrome.tabs.query({})).sort(byAge);
     const alreadyEncounteredUrls = new Set();
     const toClose = [];
+    let pinnedKept = 0;
     for (const tab of tabs) {
         if (!tab.url || tab.id === undefined || isNewTabPage(tab.url)) continue;
         const key = normalizeUrl(tab.url);
         if (alreadyEncounteredUrls.has(key)) {
-            toClose.push(tab.id);
+            // Pinned tabs are never closed, even when they are duplicates.
+            if (tab.pinned) {
+                pinnedKept++;
+            } else {
+                toClose.push(tab.id);
+            }
         } else {
             alreadyEncounteredUrls.add(key);
         }
@@ -122,7 +128,7 @@ async function deduplicateExistingTabs() {
         preventedDuplicatesCount += toClose.length;
         persistState();
     }
-    return { scanned: tabs.length, closed: toClose.length };
+    return { scanned: tabs.length, closed: toClose.length, pinnedKept };
 }
 
 async function verifyAndDeduplicate(currentTabId, currentTabUrl) {

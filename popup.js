@@ -29,6 +29,9 @@ deduplicate.addEventListener('click', async () => {
         let text = result.closed === 0
             ? `No duplicates closed across ${result.scanned} tabs.`
             : `Closed ${result.closed} duplicate ${plural(result.closed)} of ${result.scanned}.`;
+        if (result.pinnedKept > 0) {
+            text += ` Kept ${result.pinnedKept} pinned duplicate ${plural(result.pinnedKept)}.`;
+        }
         showStatus(text, result.closed > 0 ? 'ok' : '');
     } catch (e) {
         showStatus(`Error: ${e?.message ?? e}`, 'error');
