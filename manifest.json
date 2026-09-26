@@ -1,6 +1,6 @@
 {
     "name": "Prevent Duplicate Tabs",
-    "version": "0.1.0",
+    "version": "0.2.0",
     "manifest_version": 3,
     "description": "Chrome extension that detects when a duplicate tab is opened and activates already existing tab",
     "icons": {
@@ -8,7 +8,7 @@
         "128": "icon-128.png"
     },
     "background": {
-        "service_worker": "dist/background.js"
+        "service_worker": "background.js"
     },
     "permissions": ["tabs", "storage"],
     "action": {
