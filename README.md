@@ -20,6 +20,13 @@ No build step is needed: the extension is plain JavaScript.
 1. Run `git pull` from within the extension project folder.
 1. Go to the extension view in Chrome and click "Update" button.
 
+## How duplicates are detected
+
+* The `#fragment` part of a URL is ignored, so `page#a` and `page#b` are the same page.
+* `https://example.com` and `https://example.com/` are the same page.
+* Every view of a GitHub pull request (`/files`, `/commits`, `/checks`, comment links) counts as the same pull request.
+* Query strings are compared, so different searches stay in separate tabs.
+
 ## TODOs
 
 * Support white lists.

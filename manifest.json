@@ -1,6 +1,6 @@
 {
     "name": "Prevent Duplicate Tabs",
-    "version": "0.2.0",
+    "version": "0.3.0",
     "manifest_version": 3,
     "description": "Chrome extension that detects when a duplicate tab is opened and activates already existing tab",
     "icons": {
