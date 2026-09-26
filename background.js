@@ -104,7 +104,6 @@ function verifyAndDeduplicate(currentTabId, currentTabUrl) {
         if (duplicate.windowId !== undefined) {
             chrome.windows.update(duplicate.windowId, { focused: true });
         }
-        chrome.tabs.reload(duplicate.id);
         chrome.tabs.remove(currentTabId);
         preventedDuplicatesCount++;
         persistState();

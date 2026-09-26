@@ -27,6 +27,7 @@ No build step is needed: the extension is plain JavaScript.
 * Every view of a GitHub pull request (`/files`, `/commits`, `/checks`, comment links) counts as the same pull request.
 * Query strings are compared, so different searches stay in separate tabs.
 * The oldest tab is always the one that is kept.
+* The existing tab you are switched to is not reloaded, so its scroll position and unsaved input stay as they were.
 
 ## TODOs
 
