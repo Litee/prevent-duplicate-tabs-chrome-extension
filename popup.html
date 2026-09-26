@@ -3,23 +3,76 @@
     <head>
         <meta charset="utf-8" />
         <title>Prevent Duplicate Tabs</title>
-        <script src="popup.js"></script>
         <style>
-            a {
-                font-size: large;
-                white-space: nowrap;
-                text-decoration-line: none;
+            body {
+                font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+                width: 240px;
+                padding: 14px 16px;
+                margin: 0;
+                color: #1a1a1a;
             }
-
-            a:hover {
-                color: red;
+            h1 {
+                font-size: 14px;
+                margin: 0 0 10px 0;
+                font-weight: 600;
             }
+            .row {
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                gap: 12px;
+            }
+            .label { font-size: 13px; }
+            .switch { position: relative; display: inline-block; width: 40px; height: 22px; }
+            .switch input { opacity: 0; width: 0; height: 0; }
+            .slider {
+                position: absolute; inset: 0; cursor: pointer;
+                background-color: #ccc; border-radius: 22px; transition: .15s;
+            }
+            .slider:before {
+                position: absolute; content: "";
+                height: 18px; width: 18px; left: 2px; top: 2px;
+                background: white; border-radius: 50%; transition: .15s;
+            }
+            input:checked + .slider { background-color: #34c759; }
+            input:checked + .slider:before { transform: translateX(18px); }
+            .hint { font-size: 11px; color: #666; margin-top: 10px; line-height: 1.4; }
+            hr { border: 0; border-top: 1px solid #eee; margin: 12px 0; }
+            button {
+                width: 100%;
+                padding: 8px 10px;
+                font: 500 13px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+                color: #1a1a1a;
+                background: #f4f4f5;
+                border: 1px solid #e2e2e5;
+                border-radius: 8px;
+                cursor: pointer;
+            }
+            button:hover { background: #ececee; }
+            button:active { background: #e0e0e3; }
+            button:disabled { opacity: 0.6; cursor: default; }
+            .status { font-size: 11px; color: #666; margin-top: 8px; min-height: 14px; }
+            .status.ok { color: #34a853; }
+            .status.error { color: #c0392b; }
         </style>
     </head>
     <body>
-        <div>
-            <a id="menuTurnOnOff" href="#">Turn On/Off</a>
-            <a id="menuDeduplicate" href="#">Deduplicate Existing Tabs</a>
+        <h1>Prevent Duplicate Tabs</h1>
+        <div class="row">
+            <span class="label" id="stateLabel">Enabled</span>
+            <label class="switch">
+                <input type="checkbox" id="toggle" />
+                <span class="slider"></span>
+            </label>
         </div>
+        <div class="hint">
+            Opening a URL that is already open in another tab switches to that tab instead.
+            <span id="counter"></span>
+        </div>
+        <hr />
+        <button id="deduplicate">Deduplicate existing tabs</button>
+        <div class="hint">Closes duplicates across all windows and keeps the oldest tab for each URL.</div>
+        <div class="status" id="status"></div>
+        <script src="popup.js"></script>
     </body>
 </html>
