@@ -16,6 +16,18 @@ const stateReady = new Promise(resolve => {
     });
 });
 
+// New tab pages are never treated as duplicates, so opening several of them works.
+const NEW_TAB_URLS = new Set([
+    'about:blank',
+    'about:newtab',
+    'chrome://newtab/',
+    'chrome://new-tab-page/',
+]);
+
+function isNewTabPage(url) {
+    return NEW_TAB_URLS.has(url);
+}
+
 chrome.action.setBadgeBackgroundColor({ color: '#933EC5' });
 
 chrome.runtime.onMessage.addListener((request, _sender, _sendResponse) => {
@@ -80,7 +92,7 @@ function deduplicateExistingTabs() {
     chrome.tabs.query({}, tabs => {
         const alreadyEncounteredTabUrls = new Set();
         tabs.sort(byAge).forEach(tab => {
-            if (!tab.url || tab.id === undefined) return;
+            if (!tab.url || tab.id === undefined || isNewTabPage(tab.url)) return;
             const key = normalizeUrl(tab.url);
             if (alreadyEncounteredTabUrls.has(key)) {
                 chrome.tabs.remove(tab.id);
@@ -93,6 +105,7 @@ function deduplicateExistingTabs() {
 }
 
 function verifyAndDeduplicate(currentTabId, currentTabUrl) {
+    if (isNewTabPage(currentTabUrl)) return;
     chrome.tabs.query({}, tabs => {
         const key = normalizeUrl(currentTabUrl);
         const duplicate = tabs
