@@ -1,6 +1,6 @@
 # "Prevent Duplicate Tabs" Chrome extension
 
-Chrome extension that detects when a duplicate tab is opened and activates already existing tab. You can temporarily turn it off by clicking extension's icon. Icon badge is showing the number of prevented duplicates.
+Chrome extension that detects when a duplicate tab is opened and activates already existing tab. You can temporarily turn it off from the switch in the extension's popup, which also has a button to deduplicate tabs that are already open. Icon badge is showing the number of prevented duplicates.
 
 The extension uses [Manifest V3](https://developer.chrome.com/docs/extensions/mv3), so it requires a modern Chrome version. The on/off switch and the prevented-duplicates counter are stored in your browser via `chrome.storage.local`.
 
