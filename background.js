@@ -46,16 +46,42 @@ chrome.tabs.onUpdated.addListener((updatedTabId, updateInfo) => {
     verifyAndDeduplicate(updatedTabId, updateInfo.url);
 });
 
+// Builds the key used to decide whether two URLs are duplicates:
+// - the #fragment is ignored (`page#a` and `page#b` are the same page);
+// - `https://example.com` and `https://example.com/` are the same;
+// - every view of a GitHub pull request (`/files`, `/commits`, `/checks`,
+//   `#discussion_r...`, ...) collapses to `https://github.com/<owner>/<repo>/pull/<id>`.
+// Query strings are kept, so different searches stay different tabs.
+function normalizeUrl(url) {
+    let parsed;
+    try {
+        parsed = new URL(url);
+    } catch {
+        return url;
+    }
+    parsed.hash = '';
+
+    if (parsed.hostname === 'github.com') {
+        const pr = parsed.pathname.match(/^\/([^/]+)\/([^/]+)\/pull\/(\d+)(?:\/|$)/);
+        if (pr) {
+            return `https://github.com/${pr[1]}/${pr[2]}/pull/${pr[3]}`;
+        }
+    }
+
+    return parsed.toString();
+}
+
 function deduplicateExistingTabs() {
     chrome.tabs.query({}, tabs => {
         const alreadyEncounteredTabUrls = new Set();
         tabs.forEach(tab => {
             if (!tab.url || tab.id === undefined) return;
-            if (alreadyEncounteredTabUrls.has(tab.url)) {
+            const key = normalizeUrl(tab.url);
+            if (alreadyEncounteredTabUrls.has(key)) {
                 chrome.tabs.remove(tab.id);
                 preventedDuplicatesCount++;
             }
-            alreadyEncounteredTabUrls.add(tab.url);
+            alreadyEncounteredTabUrls.add(key);
         });
         persistState();
     });
@@ -63,7 +89,8 @@ function deduplicateExistingTabs() {
 
 function verifyAndDeduplicate(currentTabId, currentTabUrl) {
     chrome.tabs.query({}, tabs => {
-        const duplicates = tabs.filter(t => t.id !== currentTabId && t.url === currentTabUrl);
+        const key = normalizeUrl(currentTabUrl);
+        const duplicates = tabs.filter(t => t.id !== currentTabId && t.url && normalizeUrl(t.url) === key);
         // Keep the most recently existing tab, matching the original behavior.
         const duplicate = duplicates[duplicates.length - 1];
         if (!duplicate || duplicate.id === undefined) return;
