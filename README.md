@@ -28,6 +28,7 @@ No build step is needed: the extension is plain JavaScript.
 * Query strings are compared, so different searches stay in separate tabs.
 * The oldest tab is always the one that is kept.
 * New tab pages are never treated as duplicates.
+* "Deduplicate existing tabs" never closes pinned tabs, and the popup tells you how many pinned duplicates it kept.
 * The existing tab you are switched to is not reloaded, so its scroll position and unsaved input stay as they were.
 
 ## TODOs
