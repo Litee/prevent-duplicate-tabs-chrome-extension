@@ -21,15 +21,48 @@ test('normalizeUrl drops fragments and empty trailing question marks', () => {
     assert.equal(normalizeUrl('not a url'), 'not a url');
 });
 
-test('normalizeUrl keeps queries and collapses GitHub pull request views', () => {
+test('normalizeUrl compares URLs as they are unless aggressive GitHub matching is on', () => {
     assert.notEqual(normalizeUrl('https://example.com/?q=one'), normalizeUrl('https://example.com/?q=two'));
 
     const pullRequest = 'https://github.com/owner/repo/pull/12';
-    for (const view of [`${pullRequest}/files`, `${pullRequest}/commits/abc123`, `${pullRequest}#discussion_r1`, `${pullRequest}?diff=split`]) {
-        assert.equal(normalizeUrl(view), pullRequest, view);
+    for (const view of [`${pullRequest}/files`, `${pullRequest}/commits/abc123`, `${pullRequest}?diff=split`]) {
+        assert.notEqual(normalizeUrl(view), pullRequest, view);
+        assert.equal(normalizeUrl(view, true), pullRequest, view);
+    }
+    // A comment link is a fragment, so it is ignored either way.
+    assert.equal(normalizeUrl(`${pullRequest}#discussion_r1`), pullRequest);
+    assert.equal(normalizeUrl(`${pullRequest}#discussion_r1`, true), pullRequest);
+
+    assert.notEqual(normalizeUrl('https://example.com/owner/repo/pull/12/files', true), 'https://example.com/owner/repo/pull/12');
+});
+
+test('aggressive GitHub matching collapses pull request and issue views by id', () => {
+    for (const family of ['pull', 'issues']) {
+        const item = `https://github.com/owner/repo/${family}/12`;
+        for (const view of [`${item}/`, `${item}/files`, `${item}/commits/abc123`, `${item}?diff=split`]) {
+            assert.equal(normalizeUrl(view, true), item, view);
+        }
+        assert.equal(normalizeUrl(`${item}#issuecomment-1`, true), item);
     }
 
-    assert.notEqual(normalizeUrl('https://github.com/owner/repo/pull/123'), normalizeUrl('https://github.com/owner/repo/issues/123'));
+    const at = url => normalizeUrl(url, true);
+    // Different items, different families and other GitHub pages stay different.
+    assert.notEqual(at('https://github.com/owner/repo/pull/12'), at('https://github.com/owner/repo/pull/123'));
+    assert.notEqual(at('https://github.com/owner/repo/pull/12'), at('https://github.com/owner/repo/issues/12'));
+    assert.equal(at('https://github.com/owner/repo/settings'), 'https://github.com/owner/repo/settings');
+    assert.notEqual(at('https://github.com/owner/repo/issues/12'), at('https://github.com/owner/repo'));
+});
+
+test('the GitHub switch decides which open tabs count as duplicates', () => {
+    const tabs = [
+        tab(1, 'https://github.com/owner/repo/pull/12'),
+        tab(2, 'https://github.com/owner/repo/pull/12/files'),
+        tab(3, 'https://github.com/owner/repo/issues/34'),
+    ];
+    assert.equal(countDuplicates(tabs), 0);
+    assert.deepEqual([...planDeduplication(tabs, true).toClose], [2]);
+    assert.deepEqual([...planDeduplication(tabs).toClose], []);
+    assert.equal(countDuplicates(tabs, true), 1);
 });
 
 test('isExcludedUrl covers every shape of new tab page and browser internals', () => {

@@ -73,6 +73,19 @@
             Opening a URL that is already open in another tab switches to that tab instead.
         </div>
         <hr />
+        <div class="row">
+            <!-- Also filled in from the stored state. -->
+            <span class="label" id="githubLabel"></span>
+            <label class="switch">
+                <input type="checkbox" id="githubToggle" />
+                <span class="slider"></span>
+            </label>
+        </div>
+        <div class="hint">
+            Aggressive GitHub deduplication counts every view of a pull request or issue - files changed,
+            a single commit, comments - as the same page. It is off by default, so URLs are compared as they are.
+        </div>
+        <hr />
         <button id="deduplicate">Deduplicate existing tabs</button>
         <div class="hint">Closes duplicates across all windows and keeps the oldest tab for each URL. Pinned tabs are never closed.</div>
         <div class="status" id="status"></div>

@@ -1,6 +1,6 @@
 # "Prevent Duplicate Tabs" Chrome extension
 
-Chrome extension that detects when a duplicate tab is opened and activates already existing tab. You can temporarily turn it off from the switch in the extension's popup, which also has a button to deduplicate tabs that are already open. The icon badge shows the number of duplicate tabs that are open right now, and the popup shows how many duplicates have been prevented so far.
+Chrome extension that detects when a duplicate tab is opened and activates already existing tab. You can temporarily turn it off from the switch in the extension's popup; the popup also has a switch for aggressive GitHub deduplication and a button to deduplicate tabs that are already open. The icon badge shows the number of duplicate tabs that are open right now, and the popup shows how many duplicates have been prevented so far.
 
 The extension uses [Manifest V3](https://developer.chrome.com/docs/extensions/mv3), so it requires a modern Chrome version. The on/off switch and the prevented-duplicates counter are stored in your browser via `chrome.storage.local`.
 
@@ -24,7 +24,7 @@ No build step is needed: the extension is plain JavaScript. The tests need no de
 
 * The `#fragment` part of a URL is ignored, so `page#a` and `page#b` are the same page.
 * `https://example.com` and `https://example.com/` are the same page.
-* Every view of a GitHub pull request (`/files`, `/commits`, `/checks`, comment links) counts as the same pull request.
+* Every view of a GitHub pull request or issue (`/files`, `/commits/<sha>`, `/checks`, comment links) counts as the same page when the popup's aggressive GitHub deduplication switch is on. It is off by default, so `/pull/12/files` and `/pull/12` are different pages.
 * Query strings are compared, so different searches stay in separate tabs.
 * When a tab arrives at a URL that another tab already shows, the tab that was already there is the one kept, and the arriving tab is closed. If several tabs already show it, you are switched to the oldest of them.
 * "Deduplicate existing tabs" keeps the oldest tab for each URL. Age comes from the tab id, which starts over when the browser does, so after a restart "oldest" means the tab that was restored first.

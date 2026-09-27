@@ -7,6 +7,13 @@
 const EXCLUDED_URL_PREFIXES = ['about:', 'chrome-search:', 'devtools:'];
 const NEW_TAB_PAGE_PATTERN = /^chrome:\/\/new-?tab/;
 
+// GitHub serves one pull request or issue under many URLs: the item itself, its
+// "files changed" and "commits" tabs, a single commit inside it, comment
+// anchors, query strings such as ?diff=split. Matching by the item id (only
+// with `aggressiveGithub`) collapses all of those. Another family of item pages
+// is one more alternative in this pattern.
+const GITHUB_ITEM_PATTERN = /^\/([^/]+)\/([^/]+)\/(pull|issues)\/(\d+)(?:\/|$)/;
+
 function isExcludedUrl(url) {
     if (!url) return true;
     if (EXCLUDED_URL_PREFIXES.some(prefix => url.startsWith(prefix))) return true;
@@ -17,10 +24,10 @@ function isExcludedUrl(url) {
 // - the #fragment is ignored (`page#a` and `page#b` are the same page);
 // - `https://example.com` and `https://example.com/` are the same;
 // - a trailing `?` with nothing after it means nothing, so it is dropped;
-// - every view of a GitHub pull request (`/files`, `/commits`, `/checks`,
-//   `#discussion_r...`, ...) collapses to the pull request itself;
 // - query strings are otherwise kept, so different searches stay different tabs.
-function normalizeUrl(url) {
+// With `aggressiveGithub`, every view of a GitHub pull request or issue
+// (`/files`, `/commits/<sha>`, `?diff=split`, ...) also collapses to the item.
+function normalizeUrl(url, aggressiveGithub = false) {
     let parsed;
     try {
         parsed = new URL(url);
@@ -35,10 +42,11 @@ function normalizeUrl(url) {
         parsed.search = '';
     }
 
-    if (parsed.hostname === 'github.com') {
-        const pr = parsed.pathname.match(/^\/([^/]+)\/([^/]+)\/pull\/(\d+)(?:\/|$)/);
-        if (pr) {
-            return `https://github.com/${pr[1]}/${pr[2]}/pull/${pr[3]}`;
+    if (aggressiveGithub && parsed.hostname === 'github.com') {
+        const item = parsed.pathname.match(GITHUB_ITEM_PATTERN);
+        if (item) {
+            // item[3] is the family (`pull` or `issues`), item[4] the id.
+            return `https://github.com/${item[1]}/${item[2]}/${item[3]}/${item[4]}`;
         }
     }
 
@@ -49,9 +57,9 @@ function normalizeUrl(url) {
 // that has no URL yet (it is still starting), or one showing a page where
 // duplicates make no sense. Incognito tabs are only ever duplicates of other
 // incognito tabs.
-function duplicateKey(tab) {
+function duplicateKey(tab, aggressiveGithub = false) {
     if (!tab || isExcludedUrl(tab.url)) return null;
-    return `${tab.incognito ? 'incognito' : 'normal'} ${normalizeUrl(tab.url)}`;
+    return `${tab.incognito ? 'incognito' : 'normal'} ${normalizeUrl(tab.url, aggressiveGithub)}`;
 }
 
 // Tab ids grow over a browser session, so the smallest id is the oldest tab.
@@ -62,11 +70,11 @@ function byAge(a, b) {
 // How many tabs are duplicates of another tab: for each key, every tab after
 // the first one is a duplicate. Pinned tabs are counted - they are duplicates
 // even though the extension never closes them by itself.
-function countDuplicates(tabs) {
+function countDuplicates(tabs, aggressiveGithub = false) {
     const seenKeys = new Set();
     let duplicates = 0;
     for (const tab of tabs) {
-        const key = duplicateKey(tab);
+        const key = duplicateKey(tab, aggressiveGithub);
         if (key === null) continue;
         if (seenKeys.has(key)) {
             duplicates++;
@@ -79,12 +87,12 @@ function countDuplicates(tabs) {
 
 // The tabs "Deduplicate existing tabs" would close: the oldest tab for each key
 // is kept, and pinned duplicates are never closed.
-function planDeduplication(tabs) {
+function planDeduplication(tabs, aggressiveGithub = false) {
     const seenKeys = new Set();
     const toClose = [];
     let pinnedKept = 0;
     for (const tab of [...tabs].sort(byAge)) {
-        const key = duplicateKey(tab);
+        const key = duplicateKey(tab, aggressiveGithub);
         if (key === null || tab.id === undefined) continue;
         if (!seenKeys.has(key)) {
             seenKeys.add(key);

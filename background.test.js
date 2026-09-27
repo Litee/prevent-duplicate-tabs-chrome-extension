@@ -21,7 +21,7 @@ function loadWorker(tabs) {
             setBadgeBackgroundColor: () => {},
             setBadgeText: ({ text }) => { badgeTexts.push(text); return Promise.resolve(); },
         },
-        runtime: { onMessage: { addListener: () => {} } },
+        runtime: { onMessage: { addListener: fn => { listeners.message = fn; } } },
         tabs: {
             query: () => Promise.resolve(tabs),
             update: (id, props) => {
@@ -55,6 +55,9 @@ function loadWorker(tabs) {
 }
 
 const closes = actions => actions.filter(action => action.startsWith('close'));
+
+// Sends a message to the worker the way the popup does.
+const send = (worker, message) => new Promise(resolve => worker.listeners.message(message, {}, resolve));
 
 test('the worker starts up and puts the number of open duplicates on the badge', async () => {
     const worker = loadWorker([tab(1, 'https://a.example/'), tab(2, 'https://a.example/'), tab(3, 'https://b.example/')]);
@@ -119,4 +122,32 @@ test('a tab that navigated on since its check was queued is left alone', async (
     await worker.listeners.created(tab(5, 'https://a.example/'));
     await worker.settle();
     assert.deepEqual(worker.actions, []);
+});
+
+test('a pull request and its "files" view are different pages by default', async () => {
+    const worker = loadWorker([
+        tab(1, 'https://github.com/owner/repo/pull/12'),
+        tab(2, 'https://github.com/owner/repo/pull/12/files'),
+    ]);
+    await worker.settle();
+    assert.equal(worker.badgeTexts.at(-1), '');
+});
+
+test('the GitHub switch treats every view of one item as the same page', async () => {
+    const tabs = [
+        tab(1, 'https://github.com/owner/repo/pull/12'),
+        tab(2, 'https://github.com/owner/repo/pull/12/files'),
+    ];
+    const worker = loadWorker(tabs);
+    await worker.settle();
+    const state = await send(worker, { action: 'SetGithubMode', aggressiveGithub: true });
+    await worker.settle();
+    assert.equal(state.aggressiveGithub, true);
+    assert.equal(worker.badgeTexts.at(-1), '1');
+
+    const arriving = tab(9, 'https://github.com/owner/repo/pull/12/commits/abc123');
+    tabs.push(arriving);
+    await worker.listeners.created(arriving);
+    await worker.settle();
+    assert.deepEqual(worker.actions, ['activate 1', 'close 9']);
 });
