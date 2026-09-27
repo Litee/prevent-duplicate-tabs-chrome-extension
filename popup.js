@@ -1,7 +1,6 @@
 const toggle = document.getElementById('toggle');
 const stateLabel = document.getElementById('stateLabel');
 const githubToggle = document.getElementById('githubToggle');
-const githubLabel = document.getElementById('githubLabel');
 const counter = document.getElementById('counter');
 const deduplicate = document.getElementById('deduplicate');
 const status = document.getElementById('status');
@@ -10,7 +9,6 @@ function render({ active, aggressiveGithub, preventedDuplicatesCount }) {
     toggle.checked = active;
     stateLabel.textContent = active ? 'Enabled' : 'Disabled';
     githubToggle.checked = aggressiveGithub;
-    githubLabel.textContent = aggressiveGithub ? 'GitHub: whole PR/issue' : 'GitHub: exact URLs';
     counter.textContent = `Duplicates prevented so far: ${preventedDuplicatesCount}.`;
 }
 

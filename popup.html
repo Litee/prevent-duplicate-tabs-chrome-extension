@@ -37,6 +37,7 @@
             input:checked + .slider { background-color: #34c759; }
             input:checked + .slider:before { transform: translateX(18px); }
             .hint { font-size: 11px; color: #666; margin-top: 10px; line-height: 1.4; }
+            .hint code { font: inherit; background: #f4f4f5; padding: 1px 4px; border-radius: 4px; }
             .stat { font-size: 11px; color: #666; margin-top: 8px; }
             hr { border: 0; border-top: 1px solid #eee; margin: 12px 0; }
             button {
@@ -74,16 +75,16 @@
         </div>
         <hr />
         <div class="row">
-            <!-- Also filled in from the stored state. -->
-            <span class="label" id="githubLabel"></span>
+            <span class="label">Aggressive normalization</span>
             <label class="switch">
                 <input type="checkbox" id="githubToggle" />
                 <span class="slider"></span>
             </label>
         </div>
         <div class="hint">
-            Aggressive GitHub deduplication counts every view of a pull request or issue - files changed,
-            a single commit, comments - as the same page. It is off by default, so URLs are compared as they are.
+            GitHub only. Off: URLs are normalized the usual way, so <code>/pull/12/files</code> and
+            <code>/pull/12</code> stay different pages. On: every view of a pull request or issue - files changed,
+            a single commit, comments - normalizes to the same URL.
         </div>
         <hr />
         <button id="deduplicate">Deduplicate existing tabs</button>
