@@ -1,0 +1,122 @@
+// Run with: node --test
+// Loads the service worker with a stubbed chrome API and drives it with tab
+// events, so the wiring between events, deduplication and the badge is covered.
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const test = require('node:test');
+const vm = require('node:vm');
+
+const backgroundSource = fs.readFileSync(path.join(__dirname, 'background.js'), 'utf8');
+
+const tab = (id, url, extra = {}) => ({ id, url, incognito: false, pinned: false, windowId: 1, ...extra });
+
+function loadWorker(tabs) {
+    const actions = [];
+    const badgeTexts = [];
+    const listeners = {};
+    const chrome = {
+        storage: { local: { get: () => Promise.resolve({}), set: () => Promise.resolve() } },
+        action: {
+            setBadgeBackgroundColor: () => {},
+            setBadgeText: ({ text }) => { badgeTexts.push(text); return Promise.resolve(); },
+        },
+        runtime: { onMessage: { addListener: () => {} } },
+        tabs: {
+            query: () => Promise.resolve(tabs),
+            update: (id, props) => {
+                actions.push(`activate ${id}${props.active ? '' : ' (without activating!)'}`);
+                return Promise.resolve({ id, windowId: 1 });
+            },
+            remove: id => {
+                actions.push(`close ${id}`);
+                const index = tabs.findIndex(tab => tab.id === id);
+                if (index >= 0) tabs.splice(index, 1);
+                return Promise.resolve();
+            },
+            onCreated: { addListener: fn => { listeners.created = fn; } },
+            onUpdated: { addListener: fn => { listeners.updated = fn; } },
+            onRemoved: { addListener: () => {} },
+            onReplaced: { addListener: () => {} },
+        },
+        windows: { update: () => Promise.resolve() },
+        scripting: { executeScript: () => Promise.resolve([]) },
+    };
+    const context = vm.createContext({
+        chrome,
+        console,
+        URL,
+        importScripts: file => vm.runInContext(fs.readFileSync(path.join(__dirname, file), 'utf8'), context),
+    });
+    vm.runInContext(backgroundSource, context);
+    // Lets the startup badge recount and the stored-state read settle.
+    const settle = () => new Promise(resolve => setTimeout(resolve, 20));
+    return { actions, badgeTexts, listeners, settle };
+}
+
+const closes = actions => actions.filter(action => action.startsWith('close'));
+
+test('the worker starts up and puts the number of open duplicates on the badge', async () => {
+    const worker = loadWorker([tab(1, 'https://a.example/'), tab(2, 'https://a.example/'), tab(3, 'https://b.example/')]);
+    await worker.settle();
+    assert.deepEqual(worker.badgeTexts, ['1']);
+    assert.deepEqual(worker.actions, []);
+});
+
+test('a duplicate is closed and the tab that was there first is activated', async () => {
+    const worker = loadWorker([tab(1, 'https://a.example/'), tab(5, 'https://a.example/')]);
+    await worker.settle();
+    await worker.listeners.created(tab(5, 'https://a.example/'));
+    await worker.settle();
+    assert.deepEqual(worker.actions, ['activate 1', 'close 5']);
+});
+
+test('a pinned duplicate is never closed but is still counted', async () => {
+    const worker = loadWorker([tab(1, 'https://a.example/'), tab(5, 'https://a.example/', { pinned: true })]);
+    const pinned = tab(5, 'https://a.example/', { pinned: true });
+    await worker.settle();
+    await worker.listeners.created(pinned);
+    await worker.settle();
+    assert.deepEqual(worker.actions, []);
+    assert.equal(worker.badgeTexts.at(-1), '1');
+});
+
+test('new tab pages and browser internals are never duplicates', async () => {
+    const worker = loadWorker([
+        tab(1, 'chrome://newtab/'),
+        tab(2, 'chrome://newtab/'),
+        tab(3, 'chrome-search://local-ntp/local-ntp.html'),
+        tab(4, 'chrome-search://local-ntp/local-ntp.html'),
+    ]);
+    await worker.settle();
+    assert.deepEqual(worker.actions, []);
+    assert.equal(worker.badgeTexts.at(-1), '');
+});
+
+test('two tabs arriving at the same URL at once leave exactly one', async () => {
+    const worker = loadWorker([tab(4, 'https://new.example/'), tab(5, 'https://new.example/')]);
+    await worker.settle();
+    const arrived = [
+        worker.listeners.created(tab(4, 'https://new.example/')),
+        worker.listeners.created(tab(5, 'https://new.example/')),
+    ];
+    await Promise.all(arrived);
+    await worker.settle();
+    assert.equal(closes(worker.actions).length, 1);
+});
+
+test('the same URL in an incognito window is not a duplicate', async () => {
+    const worker = loadWorker([tab(1, 'https://a.example/'), tab(5, 'https://a.example/', { incognito: true })]);
+    await worker.settle();
+    await worker.listeners.created(tab(5, 'https://a.example/', { incognito: true }));
+    await worker.settle();
+    assert.deepEqual(worker.actions, []);
+});
+
+test('a tab that navigated on since its check was queued is left alone', async () => {
+    const worker = loadWorker([tab(1, 'https://a.example/'), tab(5, 'https://b.example/')]);
+    await worker.settle();
+    await worker.listeners.created(tab(5, 'https://a.example/'));
+    await worker.settle();
+    assert.deepEqual(worker.actions, []);
+});

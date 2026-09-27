@@ -6,17 +6,17 @@ The extension uses [Manifest V3](https://developer.chrome.com/docs/extensions/mv
 
 ## How to install
 
-1. (optional, for people with healthy paranoia) This project is very simple, so just look at its files here https://github.com/Litee/prevent-duplicate-tabs-chrome-extension. Check `manifest.json`, `background.js` and `popup.html`.
+1. (optional, for people with healthy paranoia) This project is very simple, so just look at its files here https://github.com/Litee/prevent-duplicate-tabs-chrome-extension. Check `manifest.json`, `background.js`, `dedupe.js`, `popup.html` and `popup.js`.
 1. Clone extension to your machine - e.g. `git clone https://github.com/Litee/prevent-duplicate-tabs-chrome-extension.git`
 1. Open chrome://extensions tab in your Chrome browser
 1. Activate developer mode (required for next step)
 1. Install extension as unpacked
 
-No build step is needed: the extension is plain JavaScript.
+No build step is needed: the extension is plain JavaScript. The tests need no dependencies either - `node --test` checks the URL comparison and duplicate rules in `dedupe.test.js` and the service worker wiring in `background.test.js`.
 
 ## How to update
 
-1. (optional, for people with healthy paranoia) This project is very simple, so just look at its files here https://github.com/Litee/prevent-duplicate-tabs-chrome-extension. Check `manifest.json`, `background.js` and `popup.html`.
+1. (optional, for people with healthy paranoia) This project is very simple, so just look at its files here https://github.com/Litee/prevent-duplicate-tabs-chrome-extension. Check `manifest.json`, `background.js`, `dedupe.js`, `popup.html` and `popup.js`.
 1. Run `git pull` from within the extension project folder.
 1. Go to the extension view in Chrome and click "Update" button.
 
@@ -27,20 +27,24 @@ No build step is needed: the extension is plain JavaScript.
 * Every view of a GitHub pull request (`/files`, `/commits`, `/checks`, comment links) counts as the same pull request.
 * Query strings are compared, so different searches stay in separate tabs.
 * When a tab arrives at a URL that another tab already shows, the tab that was already there is the one kept, and the arriving tab is closed. If several tabs already show it, you are switched to the oldest of them.
-* "Deduplicate existing tabs" keeps the oldest tab for each URL.
-* Incognito and normal windows are deduplicated separately, so you are never pulled across that boundary.
+* "Deduplicate existing tabs" keeps the oldest tab for each URL. Age comes from the tab id, which starts over when the browser does, so after a restart "oldest" means the tab that was restored first.
+* Incognito and normal windows are deduplicated separately, so you are never pulled across that boundary. This only matters if you allow the extension in incognito windows.
 * New tab pages are never treated as duplicates.
 * "Deduplicate existing tabs" never closes pinned tabs, and the popup tells you how many pinned duplicates it kept.
 * The existing tab you are switched to is not reloaded, so its scroll position and unsaved input stay as they were.
 * The toolbar badge shows the number of duplicate tabs that are currently open.
 
-When you are switched to an existing tab, a large green "Switched to existing tab" notice appears on that page for a few seconds. The `scripting` permission and access to all sites are used only for this notice. It can't appear on pages where extensions can't run scripts, such as `chrome://` pages and the Chrome Web Store.
+When you are switched to an existing tab, a large green "Switched to existing tab" notice appears on that page for a few seconds. The `scripting` permission and access to http(s) sites are used only for this notice. It can't appear on pages where extensions can't run scripts, such as `chrome://` pages and the Chrome Web Store.
 
 ## TODOs
 
 * Support white lists.
 * An alternative strategy: ask about whether to de-duplicate.
 * Allow to safely duplicate tabs via context menu even when dedupe is on.
+
+## License
+
+MIT - see [LICENSE](LICENSE).
 
 ## Disclaimers
 

@@ -1,15 +1,21 @@
+importScripts('dedupe.js');
+
 let preventedDuplicatesCount = 0;
 let active = true;
+
+// Badge bookkeeping: the recount generation and the text currently shown.
+let badgeGeneration = 0;
+let lastBadgeText = null;
 
 // Tabs this extension is closing right now, so their own events are ignored.
 const tabsBeingHandled = new Set();
 
-// Deduplication runs one tab at a time per normalized URL. Two tabs that arrive
-// at the same URL in the same moment - ctrl-clicking a link twice, restoring a
-// session, "open all bookmarks" - would otherwise each pick the other as the tab
-// to keep and then close themselves, leaving no tab on that URL at all. Queueing
-// instead of skipping means a third and fourth tab are still deduplicated, each
-// against a freshly queried tab list.
+// Checks for one URL run one at a time: two tabs that arrive at the same URL in
+// the same moment - ctrl-clicking a link twice, restoring a session, "open all
+// bookmarks" - would otherwise each pick the other as the tab to keep and then
+// close themselves, leaving no tab on that URL at all. Queueing instead of
+// skipping means a third and fourth tab are still deduplicated, each against a
+// freshly queried tab list.
 const queueByKey = new Map();
 
 // MV3 service workers can be terminated and restarted at any time, so the
@@ -27,37 +33,33 @@ const stateReady = chrome.storage.local.get(['active', 'preventedDuplicatesCount
     console.warn('Prevent Duplicate Tabs: could not read the stored state', e);
 });
 
-// New tab pages are never treated as duplicates, so opening several of them works.
-const NEW_TAB_URLS = new Set([
-    'about:blank',
-    'about:newtab',
-    'chrome://newtab/',
-    'chrome://new-tab-page/',
-]);
-
-function isNewTabPage(url) {
-    return NEW_TAB_URLS.has(url);
-}
-
 chrome.action.setBadgeBackgroundColor({ color: '#28a745' });
 
 chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
     if (request.action === 'SetActive') {
-        void stateReady.then(() => {
-            active = Boolean(request.active);
-            persistState();
-            sendResponse({ active, preventedDuplicatesCount });
-        });
+        void stateReady
+            .then(() => {
+                active = Boolean(request.active);
+                persistState();
+                sendResponse({ active, preventedDuplicatesCount });
+            })
+            .catch(e => console.warn('Prevent Duplicate Tabs: could not switch the extension', e));
         return true;
     }
     if (request.action === 'Deduplicate') {
         void stateReady
             .then(() => deduplicateExistingTabs())
-            .then(result => sendResponse({ ...result, preventedDuplicatesCount }));
+            .then(result => sendResponse({ ...result, preventedDuplicatesCount }), e => {
+                // No response on failure: the popup reports the closed message
+                // port as an error instead of a bogus "0 duplicates" result.
+                console.warn('Prevent Duplicate Tabs: could not deduplicate the open tabs', e);
+            });
         return true;
     }
     if (request.action === 'GetState') {
-        void stateReady.then(() => sendResponse({ active, preventedDuplicatesCount }));
+        void stateReady
+            .then(() => sendResponse({ active, preventedDuplicatesCount }))
+            .catch(e => console.warn('Prevent Duplicate Tabs: could not read the state', e));
         return true;
     }
     return false;
@@ -70,21 +72,17 @@ chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
 chrome.tabs.onCreated.addListener(async newTab => {
     void updateBadge();
     await stateReady;
-    if (!active || newTab.id === undefined || !newTab.url) {
-        return;
-    }
-    await verifyAndDeduplicate(newTab.id, newTab.url);
+    if (!active) return;
+    await verifyAndDeduplicate(newTab);
 });
 
-chrome.tabs.onUpdated.addListener(async (updatedTabId, updateInfo) => {
-    if (updateInfo.url) {
+chrome.tabs.onUpdated.addListener(async (_tabId, changeInfo, tab) => {
+    if (changeInfo.url) {
         void updateBadge();
+        await stateReady;
+        if (!active) return;
+        await verifyAndDeduplicate(tab);
     }
-    await stateReady;
-    if (!active || !updateInfo.url) {
-        return;
-    }
-    await verifyAndDeduplicate(updatedTabId, updateInfo.url);
 });
 
 // Tabs being closed (by the user or by this extension) and prerender swaps
@@ -99,62 +97,9 @@ chrome.tabs.onReplaced.addListener(() => {
 
 void updateBadge();
 
-// Builds the key used to decide whether two URLs are duplicates:
-// - the #fragment is ignored (`page#a` and `page#b` are the same page);
-// - `https://example.com` and `https://example.com/` are the same;
-// - every view of a GitHub pull request (`/files`, `/commits`, `/checks`,
-//   `#discussion_r...`, ...) collapses to `https://github.com/<owner>/<repo>/pull/<id>`.
-// Query strings are kept, so different searches stay different tabs.
-function normalizeUrl(url) {
-    let parsed;
-    try {
-        parsed = new URL(url);
-    } catch {
-        return url;
-    }
-    parsed.hash = '';
-    // A trailing `?` with nothing after it survives `toString()` even though it
-    // means nothing, so `page?` would not match `page`. Assigning the (empty)
-    // search back drops it.
-    if (!parsed.search) {
-        parsed.search = '';
-    }
-
-    if (parsed.hostname === 'github.com') {
-        const pr = parsed.pathname.match(/^\/([^/]+)\/([^/]+)\/pull\/(\d+)(?:\/|$)/);
-        if (pr) {
-            return `https://github.com/${pr[1]}/${pr[2]}/pull/${pr[3]}`;
-        }
-    }
-
-    return parsed.toString();
-}
-
-// Tab ids grow over a browser session, so the smallest id is the oldest tab.
-function byAge(a, b) {
-    return a.id - b.id;
-}
-
 async function deduplicateExistingTabs() {
-    const tabs = (await chrome.tabs.query({})).sort(byAge);
-    const alreadyEncounteredUrls = new Set();
-    const toClose = [];
-    let pinnedKept = 0;
-    for (const tab of tabs) {
-        if (!tab.url || tab.id === undefined || isNewTabPage(tab.url)) continue;
-        // Incognito tabs are only ever duplicates of other incognito tabs.
-        const key = `${tab.incognito ? 'incognito' : 'normal'} ${normalizeUrl(tab.url)}`;
-        if (alreadyEncounteredUrls.has(key)) {
-            // Pinned tabs are never closed, even when they are duplicates.
-            if (tab.pinned) {
-                pinnedKept++;
-            } else {
-                toClose.push(tab.id);
-            }
-        } else {
-            alreadyEncounteredUrls.add(key);
-        }
-    }
+    const tabs = await chrome.tabs.query({});
+    const { toClose, pinnedKept } = planDeduplication(tabs);
     let closed = 0;
     if (toClose.length > 0) {
         toClose.forEach(id => tabsBeingHandled.add(id));
@@ -173,18 +118,17 @@ async function deduplicateExistingTabs() {
     return { scanned: tabs.length, closed, pinnedKept };
 }
 
-// Claims the tab and its URL, then queues the actual work behind anything else
-// already running for that URL. The claims are taken synchronously, before the
-// first await: onCreated and onUpdated both fire for a newly opened tab, so a
-// claim taken after an await claims nothing.
-function verifyAndDeduplicate(currentTabId, currentTabUrl) {
-    if (tabsBeingHandled.has(currentTabId) || isNewTabPage(currentTabUrl)) return Promise.resolve();
-    const key = normalizeUrl(currentTabUrl);
-    tabsBeingHandled.add(currentTabId);
+// Closes a tab that duplicates one that is already open, then switches to the
+// tab that was there first.
+function verifyAndDeduplicate(tab) {
+    const key = duplicateKey(tab);
+    if (key === null || tab.id === undefined || tabsBeingHandled.has(tab.id)) {
+        return Promise.resolve();
+    }
     const done = (queueByKey.get(key) ?? Promise.resolve())
-        .then(() => switchToExistingTab(currentTabId, key))
+        .then(() => switchToExistingTab(tab.id, key))
+        .catch(e => console.warn('Prevent Duplicate Tabs: could not switch tabs', e))
         .finally(() => {
-            tabsBeingHandled.delete(currentTabId);
             if (queueByKey.get(key) === done) {
                 queueByKey.delete(key);
             }
@@ -193,23 +137,17 @@ function verifyAndDeduplicate(currentTabId, currentTabUrl) {
     return done;
 }
 
-// Closes the tab that just arrived at `key` and switches to the tab that was
-// already showing it. The tab that was already there is the one kept, so its
-// history, scroll position and unsaved input survive.
 async function switchToExistingTab(currentTabId, key) {
     try {
         const tabs = await chrome.tabs.query({});
-        const current = tabs.find(t => t.id === currentTabId);
-        // The tab can be gone already - closed by the user, or by whatever was
-        // queued ahead of this call.
-        if (!current) return;
-        // Incognito and normal windows are deduplicated separately - being pulled
-        // across that boundary is never what the user asked for.
-        const existing = tabs
-            .filter(t => t.id !== undefined && t.id !== currentTabId && t.url
-                && t.incognito === current.incognito
-                && normalizeUrl(t.url) === key)
-            .sort(byAge)[0];
+        const current = tabs.find(tab => tab.id === currentTabId);
+        // The tab can be gone already (closed by the user or by a check that was
+        // queued ahead of this one), pinned, or it may have navigated on since
+        // it was queued - in which case closing it would close the page the user
+        // is now looking at.
+        if (!current || current.pinned || duplicateKey(current) !== key) return;
+
+        const existing = findExistingTab(tabs, currentTabId, key);
         if (!existing) return;
 
         await chrome.tabs.update(existing.id, { active: true });
@@ -226,7 +164,7 @@ async function switchToExistingTab(currentTabId, key) {
 }
 
 // Shows a large green "Switched to existing tab" notice on the page for a few
-// seconds. Pages where scripts cannot run (chrome://, Chrome Web Store, ...)
+// seconds. Pages where scripts cannot run (chrome://, the Chrome Web Store, ...)
 // are skipped silently; switching to the existing tab still happens.
 function showSwitchedNotice(tabId) {
     chrome.scripting.executeScript({
@@ -271,34 +209,22 @@ function persistState() {
     chrome.storage.local.set({
         active,
         preventedDuplicatesCount,
-    });
+    }).catch(e => console.warn('Prevent Duplicate Tabs: could not save the state', e));
 }
 
-// The badge shows how many open tabs are duplicates of another open tab: for
-// each normalized URL, every tab after the first one is a duplicate.
-async function countDuplicateTabs() {
-    const tabs = await chrome.tabs.query({});
-    const seenUrlKeys = new Set();
-    let duplicates = 0;
-    for (const tab of tabs) {
-        if (tab.url === undefined || isNewTabPage(tab.url)) continue;
-        const key = normalizeUrl(tab.url);
-        if (seenUrlKeys.has(key)) {
-            duplicates++;
-        } else {
-            seenUrlKeys.add(key);
-        }
-    }
-    return duplicates;
-}
-
-let lastBadgeText = null;
-
+// The badge shows how many open tabs are duplicates of another open tab.
+// Recounts are taken one at a time and only the newest one is applied, so a slow
+// recount can never overwrite the result of a later one.
 async function updateBadge() {
-    const duplicates = await countDuplicateTabs();
-    // Chrome truncates badge text to ~4 characters.
-    const text = duplicates === 0 ? '' : duplicates >= 1000 ? '999+' : `${duplicates}`;
-    if (text === lastBadgeText) return;
-    lastBadgeText = text;
-    chrome.action.setBadgeText({ text });
+    const generation = ++badgeGeneration;
+    try {
+        const duplicates = countDuplicates(await chrome.tabs.query({}));
+        // Chrome truncates badge text to ~4 characters.
+        const text = duplicates === 0 ? '' : duplicates >= 1000 ? '999+' : `${duplicates}`;
+        if (generation !== badgeGeneration || text === lastBadgeText) return;
+        lastBadgeText = text;
+        await chrome.action.setBadgeText({ text });
+    } catch (e) {
+        console.warn('Prevent Duplicate Tabs: could not update the badge', e);
+    }
 }

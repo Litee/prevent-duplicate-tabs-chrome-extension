@@ -1,23 +1,25 @@
 {
-    "name": "Prevent Duplicate Tabs",
-    "version": "0.10.1",
-    "manifest_version": 3,
-    "description": "Chrome extension that detects when a duplicate tab is opened and activates already existing tab",
-    "icons": {
-        "16": "icon-16.png",
-        "128": "icon-128.png"
-    },
-    "background": {
-        "service_worker": "background.js"
-    },
-    "permissions": ["tabs", "storage", "scripting"],
-    "host_permissions": ["<all_urls>"],
-    "action": {
-        "default_icon": {
+  "name": "Prevent Duplicate Tabs",
+  "version": "0.10.1",
+  "manifest_version": 3,
+  "description": "Chrome extension that detects when a duplicate tab is opened and activates already existing tab",
+  "minimum_chrome_version": "88",
+  "icons": {
+    "16": "icon-16.png",
+    "32": "icon-32.png",
+    "128": "icon-128.png"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "permissions": ["tabs", "storage", "scripting"],
+  "host_permissions": ["http://*/*", "https://*/*"],
+  "action": {
+    "default_icon": {
       "16": "icon-16.png",
       "32": "icon-32.png"
     },
-        "default_title": "Prevent Duplicate Tabs",
-        "default_popup": "popup.html"
-    }
+    "default_title": "Prevent Duplicate Tabs",
+    "default_popup": "popup.html"
+  }
 }
