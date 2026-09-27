@@ -59,7 +59,9 @@
     <body>
         <h1>Prevent Duplicate Tabs</h1>
         <div class="row">
-            <span class="label" id="stateLabel">Enabled</span>
+            <!-- Filled in from the stored state; starts empty so the label can
+                 never contradict the switch next to it. -->
+            <span class="label" id="stateLabel"></span>
             <label class="switch">
                 <input type="checkbox" id="toggle" />
                 <span class="slider"></span>

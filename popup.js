@@ -15,8 +15,21 @@ function showStatus(text, kind = '') {
     status.className = `status ${kind}`;
 }
 
+// The background service worker can fail to answer (it is starting up, or the
+// extension was just reloaded), so every message shows the failure instead of
+// leaving the popup silently stuck on whatever it happened to be displaying.
+function showError(e) {
+    showStatus(`Error: ${e?.message ?? e}`, 'error');
+}
+
+const plural = count => (count === 1 ? 'tab' : 'tabs');
+
 toggle.addEventListener('change', async () => {
-    render(await chrome.runtime.sendMessage({ action: 'SetActive', active: toggle.checked }));
+    try {
+        render(await chrome.runtime.sendMessage({ action: 'SetActive', active: toggle.checked }));
+    } catch (e) {
+        showError(e);
+    }
 });
 
 deduplicate.addEventListener('click', async () => {
@@ -25,7 +38,6 @@ deduplicate.addEventListener('click', async () => {
     try {
         const result = await chrome.runtime.sendMessage({ action: 'Deduplicate' });
         render({ active: toggle.checked, preventedDuplicatesCount: result.preventedDuplicatesCount });
-        const plural = count => (count === 1 ? 'tab' : 'tabs');
         let text = result.closed === 0
             ? `No duplicates closed across ${result.scanned} tabs.`
             : `Closed ${result.closed} duplicate ${plural(result.closed)} of ${result.scanned}.`;
@@ -34,10 +46,10 @@ deduplicate.addEventListener('click', async () => {
         }
         showStatus(text, result.closed > 0 ? 'ok' : '');
     } catch (e) {
-        showStatus(`Error: ${e?.message ?? e}`, 'error');
+        showError(e);
     } finally {
         deduplicate.disabled = false;
     }
 });
 
-chrome.runtime.sendMessage({ action: 'GetState' }).then(render);
+chrome.runtime.sendMessage({ action: 'GetState' }).then(render).catch(showError);
