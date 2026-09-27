@@ -14,7 +14,6 @@ const stateReady = new Promise(resolve => {
         active = stored.active ?? true;
         preventedDuplicatesCount = stored.preventedDuplicatesCount ?? 0;
         stateLoaded = true;
-        updateBadge();
         resolve();
     });
 });
@@ -31,7 +30,7 @@ function isNewTabPage(url) {
     return NEW_TAB_URLS.has(url);
 }
 
-chrome.action.setBadgeBackgroundColor({ color: '#933EC5' });
+chrome.action.setBadgeBackgroundColor({ color: '#28a745' });
 
 chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
     if (request.action === 'SetActive') {
@@ -56,6 +55,7 @@ chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
 });
 
 chrome.tabs.onCreated.addListener(newTab => {
+    void updateBadge();
     if (!stateLoaded || !active || newTab.id === undefined || !newTab.url) {
         return;
     }
@@ -63,11 +63,26 @@ chrome.tabs.onCreated.addListener(newTab => {
 });
 
 chrome.tabs.onUpdated.addListener((updatedTabId, updateInfo) => {
+    if (updateInfo.url) {
+        void updateBadge();
+    }
     if (!stateLoaded || !active || !updateInfo.url) {
         return;
     }
     void verifyAndDeduplicate(updatedTabId, updateInfo.url);
 });
+
+// Tabs being closed (by the user or by this extension) and prerender swaps
+// change how many duplicates are open, so recount for those too.
+chrome.tabs.onRemoved.addListener(() => {
+    void updateBadge();
+});
+
+chrome.tabs.onReplaced.addListener(() => {
+    void updateBadge();
+});
+
+void updateBadge();
 
 // Builds the key used to decide whether two URLs are duplicates:
 // - the #fragment is ignored (`page#a` and `page#b` are the same page);
@@ -160,7 +175,7 @@ async function verifyAndDeduplicate(currentTabId, currentTabUrl) {
 
 // Shows a large green "Switched to existing tab" notice on the page for a few
 // seconds. Pages where scripts cannot run (chrome://, Chrome Web Store, ...)
-// are skipped silently; the badge counter still goes up.
+// are skipped silently; switching to the existing tab still happens.
 function showSwitchedNotice(tabId) {
     chrome.scripting.executeScript({
         target: { tabId },
@@ -205,16 +220,33 @@ function persistState() {
         active,
         preventedDuplicatesCount,
     });
-    updateBadge();
 }
 
-function updateBadge() {
-    let text = '';
-    if (active) {
-        // Chrome truncates badge text to ~4 characters.
-        text = preventedDuplicatesCount >= 1000 ? '999+' : `${preventedDuplicatesCount}`;
-    } else {
-        text = 'OFF';
+// The badge shows how many open tabs are duplicates of another open tab: for
+// each normalized URL, every tab after the first one is a duplicate.
+async function countDuplicateTabs() {
+    const tabs = await chrome.tabs.query({});
+    const seenUrlKeys = new Set();
+    let duplicates = 0;
+    for (const tab of tabs) {
+        if (tab.url === undefined || isNewTabPage(tab.url)) continue;
+        const key = normalizeUrl(tab.url);
+        if (seenUrlKeys.has(key)) {
+            duplicates++;
+        } else {
+            seenUrlKeys.add(key);
+        }
     }
+    return duplicates;
+}
+
+let lastBadgeText = null;
+
+async function updateBadge() {
+    const duplicates = await countDuplicateTabs();
+    // Chrome truncates badge text to ~4 characters.
+    const text = duplicates === 0 ? '' : duplicates >= 1000 ? '999+' : `${duplicates}`;
+    if (text === lastBadgeText) return;
+    lastBadgeText = text;
     chrome.action.setBadgeText({ text });
 }

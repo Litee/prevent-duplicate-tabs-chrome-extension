@@ -37,6 +37,7 @@
             input:checked + .slider { background-color: #34c759; }
             input:checked + .slider:before { transform: translateX(18px); }
             .hint { font-size: 11px; color: #666; margin-top: 10px; line-height: 1.4; }
+            .stat { font-size: 11px; color: #666; margin-top: 8px; }
             hr { border: 0; border-top: 1px solid #eee; margin: 12px 0; }
             button {
                 width: 100%;
@@ -65,9 +66,9 @@
                 <span class="slider"></span>
             </label>
         </div>
+        <div class="stat" id="counter">Duplicates prevented so far: 0.</div>
         <div class="hint">
             Opening a URL that is already open in another tab switches to that tab instead.
-            <span id="counter"></span>
         </div>
         <hr />
         <button id="deduplicate">Deduplicate existing tabs</button>
