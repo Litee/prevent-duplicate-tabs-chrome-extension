@@ -1,22 +1,24 @@
 let preventedDuplicatesCount = 0;
 let active = true;
-let stateLoaded = false;
 
 // Tabs this extension is closing right now, so their own events are ignored.
 const tabsBeingHandled = new Set();
 
 // MV3 service workers can be terminated and restarted at any time, so the
-// on/off switch and counter are persisted in chrome.storage.local. All state
-// mutations wait for `stateReady` so a write never lands before the persisted
-// values have been loaded (which would overwrite them with stale defaults).
-const stateReady = new Promise(resolve => {
-    chrome.storage.local.get(['active', 'preventedDuplicatesCount'], stored => {
-        active = stored.active ?? true;
-        preventedDuplicatesCount = stored.preventedDuplicatesCount ?? 0;
-        stateLoaded = true;
-        updateBadge();
-        resolve();
-    });
+// on/off switch and counter are persisted in chrome.storage.local. Everything
+// that reads or writes them awaits `stateReady` first: a write must never land
+// before the persisted values have been loaded (that would overwrite them with
+// stale defaults), and a tab event must never be judged against the defaults
+// either.
+const stateReady = chrome.storage.local.get(['active', 'preventedDuplicatesCount']).then(stored => {
+    active = stored.active ?? true;
+    preventedDuplicatesCount = stored.preventedDuplicatesCount ?? 0;
+    updateBadge();
+}).catch(e => {
+    // Carry on with the defaults instead of rejecting: every tab event awaits
+    // this promise, and a rejected one would throw on each of them.
+    console.warn('Prevent Duplicate Tabs: could not read the stored state', e);
+    updateBadge();
 });
 
 // New tab pages are never treated as duplicates, so opening several of them works.
@@ -55,18 +57,24 @@ chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
     return false;
 });
 
-chrome.tabs.onCreated.addListener(newTab => {
-    if (!stateLoaded || !active || newTab.id === undefined || !newTab.url) {
+// The service worker is usually started *by* the tab event it has to handle, so
+// these listeners await `stateReady` instead of bailing out while the persisted
+// state is still loading. Bailing out would drop the first duplicate after every
+// idle shutdown, which makes the extension look like it only works sometimes.
+chrome.tabs.onCreated.addListener(async newTab => {
+    await stateReady;
+    if (!active || newTab.id === undefined || !newTab.url) {
         return;
     }
-    void verifyAndDeduplicate(newTab.id, newTab.url);
+    await verifyAndDeduplicate(newTab.id, newTab.url);
 });
 
-chrome.tabs.onUpdated.addListener((updatedTabId, updateInfo) => {
-    if (!stateLoaded || !active || !updateInfo.url) {
+chrome.tabs.onUpdated.addListener(async (updatedTabId, updateInfo) => {
+    await stateReady;
+    if (!active || !updateInfo.url) {
         return;
     }
-    void verifyAndDeduplicate(updatedTabId, updateInfo.url);
+    await verifyAndDeduplicate(updatedTabId, updateInfo.url);
 });
 
 // Builds the key used to decide whether two URLs are duplicates:
