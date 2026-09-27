@@ -113,6 +113,12 @@ function normalizeUrl(url) {
         return url;
     }
     parsed.hash = '';
+    // A trailing `?` with nothing after it survives `toString()` even though it
+    // means nothing, so `page?` would not match `page`. Assigning the (empty)
+    // search back drops it.
+    if (!parsed.search) {
+        parsed.search = '';
+    }
 
     if (parsed.hostname === 'github.com') {
         const pr = parsed.pathname.match(/^\/([^/]+)\/([^/]+)\/pull\/(\d+)(?:\/|$)/);
@@ -149,17 +155,22 @@ async function deduplicateExistingTabs() {
             alreadyEncounteredUrls.add(key);
         }
     }
+    let closed = 0;
     if (toClose.length > 0) {
         toClose.forEach(id => tabsBeingHandled.add(id));
-        try {
-            await chrome.tabs.remove(toClose);
-        } finally {
-            toClose.forEach(id => tabsBeingHandled.delete(id));
+        // Removed one at a time and counted by outcome: passing every id to a
+        // single chrome.tabs.remove call means one stale id - a tab the user
+        // closed while the scan ran - rejects the whole batch and abandons the
+        // rest of the duplicates.
+        const outcomes = await Promise.allSettled(toClose.map(id => chrome.tabs.remove(id)));
+        toClose.forEach(id => tabsBeingHandled.delete(id));
+        closed = outcomes.filter(outcome => outcome.status === 'fulfilled').length;
+        if (closed > 0) {
+            preventedDuplicatesCount += closed;
+            persistState();
         }
-        preventedDuplicatesCount += toClose.length;
-        persistState();
     }
-    return { scanned: tabs.length, closed: toClose.length, pinnedKept };
+    return { scanned: tabs.length, closed, pinnedKept };
 }
 
 // Claims the tab and its URL, then queues the actual work behind anything else
