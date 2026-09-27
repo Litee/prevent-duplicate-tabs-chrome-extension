@@ -4,6 +4,14 @@ let active = true;
 // Tabs this extension is closing right now, so their own events are ignored.
 const tabsBeingHandled = new Set();
 
+// Deduplication runs one tab at a time per normalized URL. Two tabs that arrive
+// at the same URL in the same moment - ctrl-clicking a link twice, restoring a
+// session, "open all bookmarks" - would otherwise each pick the other as the tab
+// to keep and then close themselves, leaving no tab on that URL at all. Queueing
+// instead of skipping means a third and fourth tab are still deduplicated, each
+// against a freshly queried tab list.
+const queueByKey = new Map();
+
 // MV3 service workers can be terminated and restarted at any time, so the
 // on/off switch and counter are persisted in chrome.storage.local. Everything
 // that reads or writes them awaits `stateReady` first: a write must never land
@@ -128,7 +136,8 @@ async function deduplicateExistingTabs() {
     let pinnedKept = 0;
     for (const tab of tabs) {
         if (!tab.url || tab.id === undefined || isNewTabPage(tab.url)) continue;
-        const key = normalizeUrl(tab.url);
+        // Incognito tabs are only ever duplicates of other incognito tabs.
+        const key = `${tab.incognito ? 'incognito' : 'normal'} ${normalizeUrl(tab.url)}`;
         if (alreadyEncounteredUrls.has(key)) {
             // Pinned tabs are never closed, even when they are duplicates.
             if (tab.pinned) {
@@ -153,31 +162,56 @@ async function deduplicateExistingTabs() {
     return { scanned: tabs.length, closed: toClose.length, pinnedKept };
 }
 
-async function verifyAndDeduplicate(currentTabId, currentTabUrl) {
-    if (tabsBeingHandled.has(currentTabId) || isNewTabPage(currentTabUrl)) return;
+// Claims the tab and its URL, then queues the actual work behind anything else
+// already running for that URL. The claims are taken synchronously, before the
+// first await: onCreated and onUpdated both fire for a newly opened tab, so a
+// claim taken after an await claims nothing.
+function verifyAndDeduplicate(currentTabId, currentTabUrl) {
+    if (tabsBeingHandled.has(currentTabId) || isNewTabPage(currentTabUrl)) return Promise.resolve();
     const key = normalizeUrl(currentTabUrl);
-    const tabs = await chrome.tabs.query({});
-    const oldest = tabs
-        .filter(t => t.id !== undefined && t.id !== currentTabId && t.url && normalizeUrl(t.url) === key)
-        .sort(byAge)[0];
-    if (!oldest) return;
-
     tabsBeingHandled.add(currentTabId);
+    const done = (queueByKey.get(key) ?? Promise.resolve())
+        .then(() => switchToExistingTab(currentTabId, key))
+        .finally(() => {
+            tabsBeingHandled.delete(currentTabId);
+            if (queueByKey.get(key) === done) {
+                queueByKey.delete(key);
+            }
+        });
+    queueByKey.set(key, done);
+    return done;
+}
+
+// Closes the tab that just arrived at `key` and switches to the tab that was
+// already showing it. The tab that was already there is the one kept, so its
+// history, scroll position and unsaved input survive.
+async function switchToExistingTab(currentTabId, key) {
     try {
-        await chrome.tabs.update(oldest.id, { active: true });
-        if (oldest.windowId !== undefined) {
-            await chrome.windows.update(oldest.windowId, { focused: true });
+        const tabs = await chrome.tabs.query({});
+        const current = tabs.find(t => t.id === currentTabId);
+        // The tab can be gone already - closed by the user, or by whatever was
+        // queued ahead of this call.
+        if (!current) return;
+        // Incognito and normal windows are deduplicated separately - being pulled
+        // across that boundary is never what the user asked for.
+        const existing = tabs
+            .filter(t => t.id !== undefined && t.id !== currentTabId && t.url
+                && t.incognito === current.incognito
+                && normalizeUrl(t.url) === key)
+            .sort(byAge)[0];
+        if (!existing) return;
+
+        await chrome.tabs.update(existing.id, { active: true });
+        if (existing.windowId !== undefined) {
+            await chrome.windows.update(existing.windowId, { focused: true });
         }
         await chrome.tabs.remove(currentTabId);
+        preventedDuplicatesCount++;
+        persistState();
+        showSwitchedNotice(existing.id);
     } catch (e) {
         console.warn('Prevent Duplicate Tabs: could not switch tabs', e);
-        return;
-    } finally {
-        tabsBeingHandled.delete(currentTabId);
     }
-    preventedDuplicatesCount++;
-    persistState();
-    showSwitchedNotice(oldest.id);
 }
 
 // Shows a large green "Switched to existing tab" notice on the page for a few

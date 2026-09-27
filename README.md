@@ -26,7 +26,9 @@ No build step is needed: the extension is plain JavaScript.
 * `https://example.com` and `https://example.com/` are the same page.
 * Every view of a GitHub pull request (`/files`, `/commits`, `/checks`, comment links) counts as the same pull request.
 * Query strings are compared, so different searches stay in separate tabs.
-* The oldest tab is always the one that is kept.
+* When a tab arrives at a URL that another tab already shows, the tab that was already there is the one kept, and the arriving tab is closed. If several tabs already show it, you are switched to the oldest of them.
+* "Deduplicate existing tabs" keeps the oldest tab for each URL.
+* Incognito and normal windows are deduplicated separately, so you are never pulled across that boundary.
 * New tab pages are never treated as duplicates.
 * "Deduplicate existing tabs" never closes pinned tabs, and the popup tells you how many pinned duplicates it kept.
 * The existing tab you are switched to is not reloaded, so its scroll position and unsaved input stay as they were.
