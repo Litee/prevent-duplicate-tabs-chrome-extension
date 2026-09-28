@@ -6,9 +6,15 @@ let active = true;
 // can be matched by pull request / issue id instead.
 let aggressiveGithub = false;
 
-// Badge bookkeeping: the recount generation and the text currently shown.
+// The badge counts in green while duplicates are being prevented, and says OFF
+// in grey while the extension is switched off.
+const BADGE_ACTIVE_COLOR = '#28a745';
+const BADGE_OFF_COLOR = '#666666';
+
+// Badge bookkeeping: the recount generation and what the badge currently shows.
 let badgeGeneration = 0;
 let lastBadgeText = null;
+let lastBadgeColor = null;
 
 // Tabs this extension is closing right now, so their own events are ignored.
 const tabsBeingHandled = new Set();
@@ -37,14 +43,14 @@ const stateReady = chrome.storage.local.get(['active', 'aggressiveGithub', 'prev
     console.warn('Prevent Duplicate Tabs: could not read the stored state', e);
 });
 
-chrome.action.setBadgeBackgroundColor({ color: '#28a745' });
-
 chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
     if (request.action === 'SetActive') {
         void stateReady
             .then(() => {
                 active = Boolean(request.active);
                 persistState();
+                // Switched off, the badge says OFF instead of counting.
+                void updateBadge();
                 sendResponse({ active, aggressiveGithub, preventedDuplicatesCount });
             })
             .catch(e => console.warn('Prevent Duplicate Tabs: could not switch the extension', e));
@@ -229,18 +235,28 @@ function persistState() {
     }).catch(e => console.warn('Prevent Duplicate Tabs: could not save the state', e));
 }
 
-// The badge shows how many open tabs are duplicates of another open tab.
-// Recounts are taken one at a time and only the newest one is applied, so a slow
-// recount can never overwrite the result of a later one.
+// The badge shows how many open tabs are duplicates of another open tab, or
+// OFF while the extension is switched off. Recounts are taken one at a time and
+// only the newest one is applied, so a slow recount can never overwrite the
+// result of a later one.
 async function updateBadge() {
     const generation = ++badgeGeneration;
     try {
-        const duplicates = countDuplicates(await chrome.tabs.query({}), aggressiveGithub);
+        // Nothing is being deduplicated while switched off, so there is nothing
+        // to count.
+        const duplicates = active ? countDuplicates(await chrome.tabs.query({}), aggressiveGithub) : 0;
         // Chrome truncates badge text to ~4 characters.
-        const text = duplicates === 0 ? '' : duplicates >= 1000 ? '999+' : `${duplicates}`;
-        if (generation !== badgeGeneration || text === lastBadgeText) return;
-        lastBadgeText = text;
-        await chrome.action.setBadgeText({ text });
+        const text = !active ? 'OFF' : duplicates === 0 ? '' : duplicates >= 1000 ? '999+' : `${duplicates}`;
+        const color = active ? BADGE_ACTIVE_COLOR : BADGE_OFF_COLOR;
+        if (generation !== badgeGeneration) return;
+        if (text !== lastBadgeText) {
+            lastBadgeText = text;
+            await chrome.action.setBadgeText({ text });
+        }
+        if (color !== lastBadgeColor) {
+            lastBadgeColor = color;
+            await chrome.action.setBadgeBackgroundColor({ color });
+        }
     } catch (e) {
         console.warn('Prevent Duplicate Tabs: could not update the badge', e);
     }

@@ -1,6 +1,6 @@
 # "Prevent Duplicate Tabs" Chrome extension
 
-Chrome extension that detects when a duplicate tab is opened and activates already existing tab. You can temporarily turn it off from the switch in the extension's popup; the popup also has a switch for aggressive normalization of GitHub URLs and a button to deduplicate tabs that are already open. The icon badge shows the number of duplicate tabs that are open right now, and the popup shows how many duplicates have been prevented so far.
+Chrome extension that detects when a duplicate tab is opened and activates already existing tab. You can temporarily turn it off from the switch in the extension's popup; the popup also has a switch for aggressive normalization of GitHub URLs and a button to deduplicate tabs that are already open. The icon badge shows the number of duplicate tabs that are open right now, or `OFF` while the extension is switched off, and the popup shows how many duplicates have been prevented so far.
 
 The extension uses [Manifest V3](https://developer.chrome.com/docs/extensions/mv3), so it requires a modern Chrome version. The on/off switch and the prevented-duplicates counter are stored in your browser via `chrome.storage.local`.
 
@@ -32,7 +32,7 @@ No build step is needed: the extension is plain JavaScript. The tests need no de
 * New tab pages are never treated as duplicates.
 * "Deduplicate existing tabs" never closes pinned tabs, and the popup tells you how many pinned duplicates it kept.
 * The existing tab you are switched to is not reloaded, so its scroll position and unsaved input stay as they were.
-* The toolbar badge shows the number of duplicate tabs that are currently open.
+* The toolbar badge shows the number of duplicate tabs that are currently open, or `OFF` while the extension is switched off.
 
 When you are switched to an existing tab, a large green "Switched to existing tab" notice appears on that page for a few seconds. The `scripting` permission and access to http(s) sites are used only for this notice. It can't appear on pages where extensions can't run scripts, such as `chrome://` pages and the Chrome Web Store.
 

@@ -13,12 +13,13 @@ const tab = (id, url, extra = {}) => ({ id, url, incognito: false, pinned: false
 
 function loadWorker(tabs) {
     const actions = [];
+    const badgeColors = [];
     const badgeTexts = [];
     const listeners = {};
     const chrome = {
         storage: { local: { get: () => Promise.resolve({}), set: () => Promise.resolve() } },
         action: {
-            setBadgeBackgroundColor: () => {},
+            setBadgeBackgroundColor: ({ color }) => { badgeColors.push(color); return Promise.resolve(); },
             setBadgeText: ({ text }) => { badgeTexts.push(text); return Promise.resolve(); },
         },
         runtime: { onMessage: { addListener: fn => { listeners.message = fn; } } },
@@ -51,7 +52,7 @@ function loadWorker(tabs) {
     vm.runInContext(backgroundSource, context);
     // Lets the startup badge recount and the stored-state read settle.
     const settle = () => new Promise(resolve => setTimeout(resolve, 20));
-    return { actions, badgeTexts, listeners, settle };
+    return { actions, badgeColors, badgeTexts, listeners, settle };
 }
 
 const closes = actions => actions.filter(action => action.startsWith('close'));
@@ -63,7 +64,27 @@ test('the worker starts up and puts the number of open duplicates on the badge',
     const worker = loadWorker([tab(1, 'https://a.example/'), tab(2, 'https://a.example/'), tab(3, 'https://b.example/')]);
     await worker.settle();
     assert.deepEqual(worker.badgeTexts, ['1']);
+    assert.deepEqual(worker.badgeColors, ['#28a745']);
     assert.deepEqual(worker.actions, []);
+});
+
+test('the badge says OFF and greys out while the extension is switched off', async () => {
+    const worker = loadWorker([tab(1, 'https://a.example/'), tab(2, 'https://a.example/')]);
+    await worker.settle();
+    assert.equal(worker.badgeTexts.at(-1), '1');
+
+    const off = await send(worker, { action: 'SetActive', active: false });
+    await worker.settle();
+    assert.equal(off.active, false);
+    assert.equal(worker.badgeTexts.at(-1), 'OFF');
+    assert.equal(worker.badgeColors.at(-1), '#666666');
+
+    // Switching it back on restores the live count.
+    const on = await send(worker, { action: 'SetActive', active: true });
+    await worker.settle();
+    assert.equal(on.active, true);
+    assert.equal(worker.badgeTexts.at(-1), '1');
+    assert.equal(worker.badgeColors.at(-1), '#28a745');
 });
 
 test('a duplicate is closed and the tab that was there first is activated', async () => {
