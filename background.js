@@ -1,10 +1,10 @@
-importScripts('dedupe.js');
+importScripts('url-rules.js', 'dedupe.js');
 
 let preventedDuplicatesCount = 0;
 let active = true;
-// Off by default: URLs are compared as they are, except that GitHub item pages
-// can be matched by pull request / issue id instead.
-let aggressiveGithub = false;
+// The URL matching rules as written in the options page, and compiled.
+let urlRules = [];
+let compiledUrlRules = [];
 
 // The badge counts in green while duplicates are being prevented, and says OFF
 // in grey while the extension is switched off.
@@ -28,15 +28,24 @@ const tabsBeingHandled = new Set();
 const queueByKey = new Map();
 
 // MV3 service workers can be terminated and restarted at any time, so the
-// on/off switch and counter are persisted in chrome.storage.local. Everything
-// that reads or writes them awaits `stateReady` first: a write must never land
-// before the persisted values have been loaded (that would overwrite them with
-// stale defaults), and a tab event must never be judged against the defaults
-// either.
-const stateReady = chrome.storage.local.get(['active', 'aggressiveGithub', 'preventedDuplicatesCount']).then(stored => {
+// on/off switch, URL rules and counter are persisted in chrome.storage.local.
+// Everything that reads or writes them awaits `stateReady` first: a write must
+// never land before the persisted values have been loaded (that would overwrite
+// them with stale defaults), and a tab event must never be judged against the
+// defaults either.
+const stateReady = chrome.storage.local.get(['active', 'urlRules', 'preventedDuplicatesCount']).then(stored => {
     active = stored.active ?? true;
-    aggressiveGithub = stored.aggressiveGithub ?? false;
     preventedDuplicatesCount = stored.preventedDuplicatesCount ?? 0;
+    try {
+        compiledUrlRules = compileUrlRules(stored.urlRules ?? []);
+        urlRules = stored.urlRules ?? [];
+    } catch (e) {
+        // Rules are checked before they are saved, so this takes a table saved
+        // by a version of the extension that understood more than this one.
+        // It is kept in storage, for the options page to show and fix.
+        console.warn('Prevent Duplicate Tabs: ignoring the stored URL rules', e);
+        urlRules = stored.urlRules;
+    }
 }).catch(e => {
     // Carry on with the defaults instead of rejecting: every tab event awaits
     // this promise, and a rejected one would throw on each of them.
@@ -51,27 +60,36 @@ chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
                 persistState();
                 // Switched off, the badge says OFF instead of counting.
                 void updateBadge();
-                sendResponse({ active, aggressiveGithub, preventedDuplicatesCount });
+                sendResponse(currentState());
             })
             .catch(e => console.warn('Prevent Duplicate Tabs: could not switch the extension', e));
         return true;
     }
-    if (request.action === 'SetGithubMode') {
+    if (request.action === 'SetUrlRules') {
         void stateReady
             .then(() => {
-                aggressiveGithub = Boolean(request.aggressiveGithub);
+                let compiled;
+                try {
+                    compiled = compileUrlRules(request.urlRules);
+                } catch (e) {
+                    // Refused rules leave the current ones in place.
+                    sendResponse({ ...currentState(), error: e.message });
+                    return;
+                }
+                urlRules = request.urlRules;
+                compiledUrlRules = compiled;
                 persistState();
                 // Which URLs count as duplicates just changed, so the badge does too.
                 void updateBadge();
-                sendResponse({ active, aggressiveGithub, preventedDuplicatesCount });
+                sendResponse(currentState());
             })
-            .catch(e => console.warn('Prevent Duplicate Tabs: could not switch the GitHub mode', e));
+            .catch(e => console.warn('Prevent Duplicate Tabs: could not save the URL rules', e));
         return true;
     }
     if (request.action === 'Deduplicate') {
         void stateReady
             .then(() => deduplicateExistingTabs())
-            .then(result => sendResponse({ ...result, active, aggressiveGithub, preventedDuplicatesCount }), e => {
+            .then(result => sendResponse({ ...result, ...currentState() }), e => {
                 // No response on failure: the popup reports the closed message
                 // port as an error instead of a bogus "0 duplicates" result.
                 console.warn('Prevent Duplicate Tabs: could not deduplicate the open tabs', e);
@@ -80,7 +98,7 @@ chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
     }
     if (request.action === 'GetState') {
         void stateReady
-            .then(() => sendResponse({ active, aggressiveGithub, preventedDuplicatesCount }))
+            .then(() => sendResponse(currentState()))
             .catch(e => console.warn('Prevent Duplicate Tabs: could not read the state', e));
         return true;
     }
@@ -121,7 +139,7 @@ void updateBadge();
 
 async function deduplicateExistingTabs() {
     const tabs = await chrome.tabs.query({});
-    const { toClose, pinnedKept } = planDeduplication(tabs, aggressiveGithub);
+    const { toClose, pinnedKept } = planDeduplication(tabs, compiledUrlRules);
     let closed = 0;
     if (toClose.length > 0) {
         toClose.forEach(id => tabsBeingHandled.add(id));
@@ -143,7 +161,7 @@ async function deduplicateExistingTabs() {
 // Closes a tab that duplicates one that is already open, then switches to the
 // tab that was there first.
 function verifyAndDeduplicate(tab) {
-    const key = duplicateKey(tab, aggressiveGithub);
+    const key = duplicateKey(tab, compiledUrlRules);
     if (key === null || tab.id === undefined || tabsBeingHandled.has(tab.id)) {
         return Promise.resolve();
     }
@@ -167,7 +185,7 @@ async function switchToExistingTab(currentTabId, key) {
         // queued ahead of this one), pinned, or it may have navigated on since
         // it was queued - in which case closing it would close the page the user
         // is now looking at.
-        if (!current || current.pinned || duplicateKey(current, aggressiveGithub) !== key) return;
+        if (!current || current.pinned || duplicateKey(current, compiledUrlRules) !== key) return;
 
         const existing = findExistingTab(tabs, currentTabId, key);
         if (!existing) return;
@@ -227,10 +245,14 @@ function showSwitchedNotice(tabId) {
     }).catch(() => {});
 }
 
+function currentState() {
+    return { active, urlRules, preventedDuplicatesCount };
+}
+
 function persistState() {
     chrome.storage.local.set({
         active,
-        aggressiveGithub,
+        urlRules,
         preventedDuplicatesCount,
     }).catch(e => console.warn('Prevent Duplicate Tabs: could not save the state', e));
 }
@@ -238,13 +260,15 @@ function persistState() {
 // The badge shows how many open tabs are duplicates of another open tab, or
 // OFF while the extension is switched off. Recounts are taken one at a time and
 // only the newest one is applied, so a slow recount can never overwrite the
-// result of a later one.
+// result of a later one. Both the on/off state and the count (through the URL
+// rules) come from storage, so it waits for them to be loaded.
 async function updateBadge() {
     const generation = ++badgeGeneration;
     try {
+        await stateReady;
         // Nothing is being deduplicated while switched off, so there is nothing
         // to count.
-        const duplicates = active ? countDuplicates(await chrome.tabs.query({}), aggressiveGithub) : 0;
+        const duplicates = active ? countDuplicates(await chrome.tabs.query({}), compiledUrlRules) : 0;
         // Chrome truncates badge text to ~4 characters.
         const text = !active ? 'OFF' : duplicates === 0 ? '' : duplicates >= 1000 ? '999+' : `${duplicates}`;
         const color = active ? BADGE_ACTIVE_COLOR : BADGE_OFF_COLOR;
