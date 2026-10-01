@@ -6,10 +6,14 @@ const test = require('node:test');
 const vm = require('node:vm');
 
 // dedupe.js is a plain script - the service worker loads it with importScripts
-// - so it is evaluated here in a bare context to get at its functions.
+// - so it is evaluated here in a bare context to get at its functions. The
+// rules go in first, in the same order and for the same reason as the
+// importScripts call in background.js: normalizeUrl calls into them.
 const context = vm.createContext({ URL });
-vm.runInContext(fs.readFileSync(path.join(__dirname, 'dedupe.js'), 'utf8'), context);
-const { countDuplicates, duplicateKey, findExistingTab, isExcludedUrl, normalizeUrl, planDeduplication } = context;
+for (const file of ['url-rules.js', 'dedupe.js']) {
+    vm.runInContext(fs.readFileSync(path.join(__dirname, file), 'utf8'), context);
+}
+const { compileUrlRules, countDuplicates, duplicateKey, findExistingTab, isExcludedUrl, normalizeUrl, planDeduplication } = context;
 
 const tab = (id, url, extra = {}) => ({ id, url, incognito: false, pinned: false, ...extra });
 
@@ -21,48 +25,26 @@ test('normalizeUrl drops fragments and empty trailing question marks', () => {
     assert.equal(normalizeUrl('not a url'), 'not a url');
 });
 
-test('normalizeUrl compares URLs as they are unless aggressive GitHub matching is on', () => {
+test('normalizeUrl compares URLs as they are unless a rule says otherwise', () => {
     assert.notEqual(normalizeUrl('https://example.com/?q=one'), normalizeUrl('https://example.com/?q=two'));
 
     const pullRequest = 'https://github.com/owner/repo/pull/12';
+    const rules = compileUrlRules([{
+        name: 'pull requests',
+        match: 'github.com/{owner}/{repo}/pull/{number:[0-9]+}/**',
+        key: 'https://github.com/{owner}/{repo}/pull/{number}',
+    }]);
     for (const view of [`${pullRequest}/files`, `${pullRequest}/commits/abc123`, `${pullRequest}?diff=split`]) {
         assert.notEqual(normalizeUrl(view), pullRequest, view);
-        assert.equal(normalizeUrl(view, true), pullRequest, view);
+        assert.equal(normalizeUrl(view, rules), pullRequest, view);
     }
     // A comment link is a fragment, so it is ignored either way.
     assert.equal(normalizeUrl(`${pullRequest}#discussion_r1`), pullRequest);
-    assert.equal(normalizeUrl(`${pullRequest}#discussion_r1`, true), pullRequest);
 
-    assert.notEqual(normalizeUrl('https://example.com/owner/repo/pull/12/files', true), 'https://example.com/owner/repo/pull/12');
-});
-
-test('aggressive GitHub matching collapses pull request and issue views by id', () => {
-    for (const family of ['pull', 'issues']) {
-        const item = `https://github.com/owner/repo/${family}/12`;
-        for (const view of [`${item}/`, `${item}/files`, `${item}/commits/abc123`, `${item}?diff=split`]) {
-            assert.equal(normalizeUrl(view, true), item, view);
-        }
-        assert.equal(normalizeUrl(`${item}#issuecomment-1`, true), item);
-    }
-
-    const at = url => normalizeUrl(url, true);
-    // Different items, different families and other GitHub pages stay different.
-    assert.notEqual(at('https://github.com/owner/repo/pull/12'), at('https://github.com/owner/repo/pull/123'));
-    assert.notEqual(at('https://github.com/owner/repo/pull/12'), at('https://github.com/owner/repo/issues/12'));
-    assert.equal(at('https://github.com/owner/repo/settings'), 'https://github.com/owner/repo/settings');
-    assert.notEqual(at('https://github.com/owner/repo/issues/12'), at('https://github.com/owner/repo'));
-});
-
-test('the GitHub switch decides which open tabs count as duplicates', () => {
-    const tabs = [
-        tab(1, 'https://github.com/owner/repo/pull/12'),
-        tab(2, 'https://github.com/owner/repo/pull/12/files'),
-        tab(3, 'https://github.com/owner/repo/issues/34'),
-    ];
+    const tabs = [tab(1, pullRequest), tab(2, `${pullRequest}/files`)];
     assert.equal(countDuplicates(tabs), 0);
-    assert.deepEqual([...planDeduplication(tabs, true).toClose], [2]);
-    assert.deepEqual([...planDeduplication(tabs).toClose], []);
-    assert.equal(countDuplicates(tabs, true), 1);
+    assert.equal(countDuplicates(tabs, rules), 1);
+    assert.deepEqual([...planDeduplication(tabs, rules).toClose], [2]);
 });
 
 test('isExcludedUrl covers every shape of new tab page and browser internals', () => {

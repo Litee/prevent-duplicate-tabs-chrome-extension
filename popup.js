@@ -1,14 +1,16 @@
 const toggle = document.getElementById('toggle');
 const stateLabel = document.getElementById('stateLabel');
-const githubToggle = document.getElementById('githubToggle');
+const rulesLabel = document.getElementById('rulesLabel');
+const openRules = document.getElementById('openRules');
 const counter = document.getElementById('counter');
 const deduplicate = document.getElementById('deduplicate');
 const status = document.getElementById('status');
 
-function render({ active, aggressiveGithub, preventedDuplicatesCount }) {
+function render({ active, urlRules, preventedDuplicatesCount }) {
     toggle.checked = active;
     stateLabel.textContent = active ? 'Enabled' : 'Disabled';
-    githubToggle.checked = aggressiveGithub;
+    const ruleCount = Array.isArray(urlRules) ? urlRules.length : 0;
+    rulesLabel.textContent = `URL matching rules: ${ruleCount === 0 ? 'none' : ruleCount}`;
     counter.textContent = `Duplicates prevented so far: ${preventedDuplicatesCount}.`;
 }
 
@@ -34,12 +36,9 @@ toggle.addEventListener('change', async () => {
     }
 });
 
-githubToggle.addEventListener('change', async () => {
-    try {
-        render(await chrome.runtime.sendMessage({ action: 'SetGithubMode', aggressiveGithub: githubToggle.checked }));
-    } catch (e) {
-        showError(e);
-    }
+openRules.addEventListener('click', event => {
+    event.preventDefault();
+    chrome.runtime.openOptionsPage().catch(showError);
 });
 
 deduplicate.addEventListener('click', async () => {

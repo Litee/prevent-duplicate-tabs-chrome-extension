@@ -37,7 +37,8 @@
             input:checked + .slider { background-color: #34c759; }
             input:checked + .slider:before { transform: translateX(18px); }
             .hint { font-size: 11px; color: #666; margin-top: 10px; line-height: 1.4; }
-            .hint code { font: inherit; background: #f4f4f5; padding: 1px 4px; border-radius: 4px; }
+            a { font-size: 13px; color: #1a73e8; text-decoration: none; }
+            a:hover { text-decoration: underline; }
             .stat { font-size: 11px; color: #666; margin-top: 8px; }
             hr { border: 0; border-top: 1px solid #eee; margin: 12px 0; }
             button {
@@ -75,16 +76,11 @@
         </div>
         <hr />
         <div class="row">
-            <span class="label">Aggressive normalization</span>
-            <label class="switch">
-                <input type="checkbox" id="githubToggle" />
-                <span class="slider"></span>
-            </label>
+            <span class="label" id="rulesLabel">URL matching rules</span>
+            <a href="#" id="openRules">Edit</a>
         </div>
         <div class="hint">
-            GitHub only. Off: URLs are normalized the usual way, so <code>/pull/12/files</code> and
-            <code>/pull/12</code> stay different pages. On: every view of a pull request or issue - files changed,
-            a single commit, comments - normalizes to the same URL.
+            Rules make different URLs count as the same page, such as every view of a GitHub pull request.
         </div>
         <hr />
         <button id="deduplicate">Deduplicate existing tabs</button>

@@ -11,13 +11,13 @@ const backgroundSource = fs.readFileSync(path.join(__dirname, 'background.js'), 
 
 const tab = (id, url, extra = {}) => ({ id, url, incognito: false, pinned: false, windowId: 1, ...extra });
 
-function loadWorker(tabs) {
+function loadWorker(tabs, stored = {}) {
     const actions = [];
     const badgeColors = [];
     const badgeTexts = [];
     const listeners = {};
     const chrome = {
-        storage: { local: { get: () => Promise.resolve({}), set: () => Promise.resolve() } },
+        storage: { local: { get: () => Promise.resolve(stored), set: values => { Object.assign(stored, values); return Promise.resolve(); } } },
         action: {
             setBadgeBackgroundColor: ({ color }) => { badgeColors.push(color); return Promise.resolve(); },
             setBadgeText: ({ text }) => { badgeTexts.push(text); return Promise.resolve(); },
@@ -47,7 +47,8 @@ function loadWorker(tabs) {
         chrome,
         console,
         URL,
-        importScripts: file => vm.runInContext(fs.readFileSync(path.join(__dirname, file), 'utf8'), context),
+        // The real importScripts takes any number of files, in order.
+        importScripts: (...files) => files.forEach(file => vm.runInContext(fs.readFileSync(path.join(__dirname, file), 'utf8'), context)),
     });
     vm.runInContext(backgroundSource, context);
     // Lets the startup badge recount and the stored-state read settle.
@@ -57,7 +58,7 @@ function loadWorker(tabs) {
 
 const closes = actions => actions.filter(action => action.startsWith('close'));
 
-// Sends a message to the worker the way the popup does.
+// Sends a message to the worker the way the popup and the options page do.
 const send = (worker, message) => new Promise(resolve => worker.listeners.message(message, {}, resolve));
 
 test('the worker starts up and puts the number of open duplicates on the badge', async () => {
@@ -85,6 +86,13 @@ test('the badge says OFF and greys out while the extension is switched off', asy
     assert.equal(on.active, true);
     assert.equal(worker.badgeTexts.at(-1), '1');
     assert.equal(worker.badgeColors.at(-1), '#28a745');
+});
+
+test('a worker that starts up switched off never shows a count', async () => {
+    const worker = loadWorker([tab(1, 'https://a.example/'), tab(2, 'https://a.example/')], { active: false });
+    await worker.settle();
+    assert.deepEqual(worker.badgeTexts, ['OFF']);
+    assert.deepEqual(worker.badgeColors, ['#666666']);
 });
 
 test('a duplicate is closed and the tab that was there first is activated', async () => {
@@ -145,7 +153,13 @@ test('a tab that navigated on since its check was queued is left alone', async (
     assert.deepEqual(worker.actions, []);
 });
 
-test('a pull request and its "files" view are different pages by default', async () => {
+const pullRequestRule = {
+    name: 'pull requests',
+    match: 'github.com/{owner}/{repo}/pull/{number:[0-9]+}/**',
+    key: 'https://github.com/{owner}/{repo}/pull/{number}',
+};
+
+test('a pull request and its "files" view are different pages without rules', async () => {
     const worker = loadWorker([
         tab(1, 'https://github.com/owner/repo/pull/12'),
         tab(2, 'https://github.com/owner/repo/pull/12/files'),
@@ -154,21 +168,37 @@ test('a pull request and its "files" view are different pages by default', async
     assert.equal(worker.badgeTexts.at(-1), '');
 });
 
-test('the GitHub switch treats every view of one item as the same page', async () => {
-    const tabs = [
-        tab(1, 'https://github.com/owner/repo/pull/12'),
-        tab(2, 'https://github.com/owner/repo/pull/12/files'),
-    ];
-    const worker = loadWorker(tabs);
-    await worker.settle();
-    const state = await send(worker, { action: 'SetGithubMode', aggressiveGithub: true });
-    await worker.settle();
-    assert.equal(state.aggressiveGithub, true);
-    assert.equal(worker.badgeTexts.at(-1), '1');
-
+test('stored rules are applied from the first tab event on', async () => {
+    const tabs = [tab(1, 'https://github.com/owner/repo/pull/12')];
+    const worker = loadWorker(tabs, { urlRules: [pullRequestRule] });
     const arriving = tab(9, 'https://github.com/owner/repo/pull/12/commits/abc123');
     tabs.push(arriving);
     await worker.listeners.created(arriving);
     await worker.settle();
     assert.deepEqual(worker.actions, ['activate 1', 'close 9']);
+});
+
+test('saved rules are stored and change which tabs are duplicates', async () => {
+    const stored = {};
+    const worker = loadWorker([
+        tab(1, 'https://github.com/owner/repo/pull/12'),
+        tab(2, 'https://github.com/owner/repo/pull/12/files'),
+    ], stored);
+    await worker.settle();
+    const state = await send(worker, { action: 'SetUrlRules', urlRules: [pullRequestRule] });
+    await worker.settle();
+    assert.equal(state.error, undefined);
+    assert.deepEqual(state.urlRules, [pullRequestRule]);
+    assert.deepEqual(stored.urlRules, [pullRequestRule]);
+    assert.equal(worker.badgeTexts.at(-1), '1');
+});
+
+test('rules that cannot be understood are refused and the old ones kept', async () => {
+    const stored = { urlRules: [pullRequestRule] };
+    const worker = loadWorker([], stored);
+    await worker.settle();
+    const state = await send(worker, { action: 'SetUrlRules', urlRules: [{ name: 'broken', match: 'example.com/{id:\\d+}', key: '{id}' }] });
+    assert.match(state.error, /broken/);
+    assert.deepEqual(state.urlRules, [pullRequestRule]);
+    assert.deepEqual(stored.urlRules, [pullRequestRule]);
 });

@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8" />
+        <title>Prevent Duplicate Tabs - URL matching rules</title>
+        <style>
+            body {
+                font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+                max-width: 760px;
+                padding: 24px;
+                margin: 0 auto;
+                color: #1a1a1a;
+            }
+            h1 { font-size: 18px; margin: 0 0 12px 0; font-weight: 600; }
+            p { font-size: 13px; line-height: 1.5; color: #444; }
+            code { background: #f4f4f5; padding: 1px 4px; border-radius: 4px; }
+            textarea {
+                box-sizing: border-box;
+                width: 100%;
+                min-height: 320px;
+                padding: 10px;
+                font: 12px ui-monospace, SFMono-Regular, Menlo, monospace;
+                border: 1px solid #e2e2e5;
+                border-radius: 8px;
+                resize: vertical;
+            }
+            button {
+                margin-top: 10px;
+                padding: 8px 16px;
+                font: 500 13px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+                color: #1a1a1a;
+                background: #f4f4f5;
+                border: 1px solid #e2e2e5;
+                border-radius: 8px;
+                cursor: pointer;
+            }
+            button:hover { background: #ececee; }
+            button:disabled { opacity: 0.6; cursor: default; }
+            .status { font-size: 12px; color: #666; margin-top: 8px; min-height: 16px; white-space: pre-wrap; }
+            .status.ok { color: #34a853; }
+            .status.error { color: #c0392b; }
+            h2 { font-size: 14px; margin: 24px 0 8px 0; font-weight: 600; }
+            table { border-collapse: collapse; font-size: 12px; }
+            td { padding: 3px 12px 3px 0; vertical-align: top; color: #444; }
+            td:first-child { white-space: nowrap; }
+            .example {
+                border: 1px solid #e2e2e5;
+                border-radius: 8px;
+                padding: 10px 12px;
+                margin-bottom: 8px;
+                display: flex;
+                gap: 12px;
+                align-items: flex-start;
+                justify-content: space-between;
+            }
+            .example button { margin-top: 0; flex-shrink: 0; }
+            .example-name { font-size: 13px; font-weight: 600; }
+            .example-note { font-size: 12px; color: #666; margin-top: 2px; }
+            .example pre {
+                font: 11px ui-monospace, SFMono-Regular, Menlo, monospace;
+                margin: 6px 0 0 0;
+                white-space: pre-wrap;
+                word-break: break-all;
+            }
+            .example .same { font-size: 11px; color: #666; margin-top: 6px; word-break: break-all; }
+        </style>
+    </head>
+    <body>
+        <h1>URL matching rules</h1>
+        <p>
+            A JSON array of <code>{ "name", "match", "key" }</code> rules. A URL that matches a rule's
+            <code>match</code> pattern is compared by its expanded <code>key</code>, so tabs whose URLs differ
+            only in what the key leaves out are duplicates. The first matching rule wins; <code>[]</code> means
+            URLs are compared as they are. Examples to start from and the pattern language are below.
+        </p>
+        <textarea id="rules" spellcheck="false" disabled></textarea>
+        <button id="save" disabled>Save</button>
+        <div class="status" id="status"></div>
+
+        <h2>Examples</h2>
+        <p>
+            "Add" appends a rule to the rules above; it takes effect once you click Save. Rules are tried
+            in order, so put more specific rules first.
+        </p>
+        <div id="examples"></div>
+
+        <h2>Patterns</h2>
+        <p>
+            A pattern is a hostname followed by path segments, separated by <code>/</code>. The scheme, query
+            string and <code>#fragment</code> play no part in matching, and are left out of the key.
+        </p>
+        <table>
+            <tr><td><code>text</code></td><td>a segment that must match exactly</td></tr>
+            <tr><td><code>{name}</code></td><td>any one segment, captured as <code>{name}</code> for the key</td></tr>
+            <tr><td><code>{name:[0-9]+}</code></td><td>one segment made only of the listed characters; ranges and <code>^</code> (not) work, other regular expression syntax does not</td></tr>
+            <tr><td><code>*</code></td><td>any one segment, not captured</td></tr>
+            <tr><td><code>**</code></td><td>whatever path is left, including none; only at the end</td></tr>
+            <tr><td><code>*.example.com</code></td><td>any subdomain of <code>example.com</code>, not <code>example.com</code> itself</td></tr>
+        </table>
+        <script src="rule-examples.js"></script>
+        <script src="options.js"></script>
+    </body>
+</html>
