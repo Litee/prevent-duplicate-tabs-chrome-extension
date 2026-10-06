@@ -202,3 +202,16 @@ test('rules that cannot be understood are refused and the old ones kept', async 
     assert.deepEqual(state.urlRules, [pullRequestRule]);
     assert.deepEqual(stored.urlRules, [pullRequestRule]);
 });
+
+test('a tab that reloads onto an ignored sign-in page is kept', async () => {
+    const signIn = 'https://login.example.com/?return=/a';
+    const tabs = [tab(1, signIn), tab(2, 'https://example.com/a')];
+    const worker = loadWorker(tabs, { urlRules: [{ name: 'sign-in', match: 'login.example.com/**', ignore: true }] });
+    await worker.settle();
+    // Tab 2's session runs out and it is sent to the page tab 1 is on.
+    tabs[1] = tab(2, signIn);
+    await worker.listeners.updated(2, { url: signIn }, tabs[1]);
+    await worker.settle();
+    assert.deepEqual(worker.actions, []);
+    assert.equal(worker.badgeTexts.at(-1), '');
+});

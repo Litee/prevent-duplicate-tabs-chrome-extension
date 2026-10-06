@@ -41,8 +41,10 @@ save.addEventListener('click', async () => {
     }
 });
 
-// Appends an example to the rules being edited. Nothing is saved: the rules are
-// checked and stored by Save, as if they had been typed in.
+// Adds an example to the rules being edited: a key rule at the end, an ignore
+// rule at the start, so that no rule already there can match its pages first.
+// Nothing is saved: the rules are checked and stored by Save, as if they had
+// been typed in.
 function addExample(rule) {
     let current;
     try {
@@ -59,13 +61,13 @@ function addExample(rule) {
         showStatus(`"${rule.name}" is already in the rules.`);
         return;
     }
-    rules.value = JSON.stringify([...current, rule], null, 4);
+    rules.value = JSON.stringify(rule.ignore ? [rule, ...current] : [...current, rule], null, 4);
     showStatus(`Added "${rule.name}". Click Save to use it.`);
 }
 
 function renderExamples() {
     const container = document.getElementById('examples');
-    for (const { rule, note, sameAs } of URL_RULE_EXAMPLES) {
+    for (const { rule, note, sameAs, ignores } of URL_RULE_EXAMPLES) {
         const card = document.createElement('div');
         card.className = 'example';
 
@@ -84,7 +86,9 @@ function renderExamples() {
         json.textContent = JSON.stringify(rule, null, 4);
         const same = document.createElement('div');
         same.className = 'same';
-        same.textContent = `Same page: ${sameAs.join('  and  ')}`;
+        same.textContent = ignores
+            ? `Never closed as a duplicate: ${ignores.join('  or  ')}`
+            : `Same page: ${sameAs.join('  and  ')}`;
         text.append(json, same);
 
         const add = document.createElement('button');

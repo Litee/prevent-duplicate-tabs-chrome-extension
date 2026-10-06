@@ -47,6 +47,24 @@ test('normalizeUrl compares URLs as they are unless a rule says otherwise', () =
     assert.deepEqual([...planDeduplication(tabs, rules).toClose], [2]);
 });
 
+test('tabs on an ignored URL are never duplicates, so none of them is closed', () => {
+    // The lost-tabs case: tabs whose session ran out all reload onto one
+    // sign-in page.
+    const rules = compileUrlRules([{ name: 'sign-in', match: 'login.example.com/**', ignore: true }]);
+    const tabs = [
+        tab(1, 'https://login.example.com/?return=/a'),
+        tab(2, 'https://login.example.com/?return=/a'),
+        tab(3, 'https://login.example.com/'),
+        tab(4, 'https://example.com/'),
+        tab(5, 'https://example.com/'),
+    ];
+    assert.equal(duplicateKey(tabs[0], rules), null);
+    assert.equal(countDuplicates(tabs, rules), 1);
+    assert.deepEqual([...planDeduplication(tabs, rules).toClose], [5]);
+    // Without the rule, the sign-in tabs would have been closed.
+    assert.deepEqual([...planDeduplication(tabs).toClose], [2, 5]);
+});
+
 test('isExcludedUrl covers every shape of new tab page and browser internals', () => {
     const excluded = [
         'about:blank',
