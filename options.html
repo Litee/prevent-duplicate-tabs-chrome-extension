@@ -70,8 +70,10 @@
         <p>
             A JSON array of <code>{ "name", "match", "key" }</code> rules. A URL that matches a rule's
             <code>match</code> pattern is compared by its expanded <code>key</code>, so tabs whose URLs differ
-            only in what the key leaves out are duplicates. The first matching rule wins; <code>[]</code> means
-            URLs are compared as they are. Examples to start from and the pattern language are below.
+            only in what the key leaves out are duplicates. A rule with <code>"ignore": true</code> instead of a
+            key makes the URLs it matches never count as duplicates, so those tabs are never closed - use it for
+            sign-in pages that expired tabs reload onto. The first matching rule wins; <code>[]</code> means URLs
+            are compared as they are. Examples to start from and the pattern language are below.
         </p>
         <textarea id="rules" spellcheck="false" disabled></textarea>
         <button id="save" disabled>Save</button>
@@ -79,8 +81,9 @@
 
         <h2>Examples</h2>
         <p>
-            "Add" appends a rule to the rules above; it takes effect once you click Save. Rules are tried
-            in order, so put more specific rules first.
+            "Add" puts a rule into the rules above - at the end, or at the start for an ignore rule - and it
+            takes effect once you click Save. Rules are tried in order, so put more specific rules first: an
+            ignore rule only protects pages that no rule above it has already matched.
         </p>
         <div id="examples"></div>
 

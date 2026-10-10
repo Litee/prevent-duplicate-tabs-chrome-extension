@@ -25,7 +25,7 @@ No build step is needed: the extension is plain JavaScript. The tests need no de
 * The `#fragment` part of a URL is ignored, so `page#a` and `page#b` are the same page.
 * `https://example.com` and `https://example.com/` are the same page.
 * Query strings are compared, so different searches stay in separate tabs.
-* Sites where one page has several addresses can be handled by [URL matching rules](#url-matching-rules). None are set up out of the box.
+* Sites where one page has several addresses can be handled by [URL matching rules](#url-matching-rules), and pages that should never be deduplicated - such as sign-in pages - can be [ignored](#ignoring-urls). None are set up out of the box.
 * When a tab arrives at a URL that another tab already shows, the tab that was already there is the one kept, and the arriving tab is closed. If several tabs already show it, you are switched to the oldest of them.
 * "Deduplicate existing tabs" keeps the oldest tab for each URL. Age comes from the tab id, which starts over when the browser does, so after a restart "oldest" means the tab that was restored first.
 * Incognito and normal windows are deduplicated separately, so you are never pulled across that boundary. This only matters if you allow the extension in incognito windows.
@@ -40,7 +40,7 @@ When you are switched to an existing tab, a large green "Switched to existing ta
 
 Some sites give one page several addresses. A GitHub pull request is the same pull request whether you are looking at `/files`, `/commits` or a comment link, but the URLs are all different, so comparing URLs on its own would leave you with four tabs on one pull request.
 
-Rules fix that without code. Open them from the popup's "Edit" link next to "URL matching rules" (or the extension's "Extension options" on `chrome://extensions`), paste a JSON array of rules and click Save. A rule is a pattern and a key: a URL that matches the `match` pattern is compared by its expanded `key`, so two tabs whose URLs differ only in the parts the key leaves out are duplicates of each other. No rules are set up out of the box, so until you add some, URLs are compared as they are. The rules page has examples - GitHub pull requests and issues, Stack Overflow questions, Jira issues, Reddit posts - that you can add with one click, and a summary of the pattern language.
+Rules fix that without code. Open them from the popup's "Edit" link next to "URL matching rules" (or the extension's "Extension options" on `chrome://extensions`), paste a JSON array of rules and click Save. A rule is a pattern and a key: a URL that matches the `match` pattern is compared by its expanded `key`, so two tabs whose URLs differ only in the parts the key leaves out are duplicates of each other. No rules are set up out of the box, so until you add some, URLs are compared as they are. The rules page has examples - GitHub pull requests and issues, Stack Overflow questions, Jira issues, Reddit posts, and Google, Microsoft, Okta and GitHub sign-in pages to ignore - that you can add with one click, and a summary of the pattern language.
 
 ### GitHub rules
 
@@ -63,6 +63,23 @@ Copy this into the rules page to treat every view of a GitHub pull request (`/fi
 
 Keep only the first rule if you want issues compared as plain URLs. Pull request 12 and issue 12 stay different pages either way, because their keys differ.
 
+### Ignoring URLs
+
+A rule with `"ignore": true` instead of a `key` makes the URLs it matches never count as duplicates. Tabs on those URLs are never closed, never closed in favour of each other, and not counted on the badge.
+
+Use it for sign-in pages. When a session runs out, every tab on that site reloads onto the same sign-in URL. Without an ignore rule, those tabs are duplicates of each other and get closed, along with the pages they were showing:
+
+```json
+[
+    { "name": "Google sign-in", "match": "accounts.google.com/**", "ignore": true },
+    { "name": "Microsoft sign-in", "match": "login.microsoftonline.com/**", "ignore": true },
+    { "name": "Okta sign-in", "match": "*.okta.com/**", "ignore": true },
+    { "name": "GitHub sign-in", "match": "github.com/login/**", "ignore": true }
+]
+```
+
+The first rule that matches a URL wins, so put ignore rules above any key rule that would also match the same pages.
+
 ### Pattern language
 
 The pattern language is deliberately smaller than regular expressions:
@@ -82,7 +99,6 @@ Patterns are matched against the hostname and the path, so the scheme and the qu
 
 ## TODOs
 
-* Support white lists.
 * An alternative strategy: ask about whether to de-duplicate.
 * Allow to safely duplicate tabs via context menu even when dedupe is on.
 

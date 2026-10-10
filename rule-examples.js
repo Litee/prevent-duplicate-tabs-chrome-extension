@@ -1,7 +1,8 @@
 // Example URL matching rules, offered in the options page to copy from. None of
-// them is active until it is added there and saved. Each one comes with two
-// URLs it treats as the same page, which url-rules.test.js checks, and maybe a
-// note shown next to it.
+// them is active until it is added there and saved. A key rule comes with two
+// URLs it treats as the same page (`sameAs`), an ignore rule with URLs it keeps
+// from ever being closed (`ignores`); url-rules.test.js checks both. Any of
+// them may have a note shown next to it.
 const URL_RULE_EXAMPLES = [
     {
         rule: {
@@ -44,5 +45,41 @@ const URL_RULE_EXAMPLES = [
             key: 'https://www.reddit.com/r/{subreddit}/comments/{id}',
         },
         sameAs: ['https://www.reddit.com/r/chrome/comments/abc123/some_title/', 'https://www.reddit.com/r/chrome/comments/abc123/some_title/def456/'],
+    },
+    // Sign-in pages. A tab whose session has run out reloads onto one of
+    // these, and so does every other such tab, so without an ignore rule they
+    // are closed as duplicates of each other and the pages they showed are lost.
+    {
+        note: 'Tabs whose Google session ran out are sent here, often several at once.',
+        rule: {
+            name: 'Google sign-in',
+            match: 'accounts.google.com/**',
+            ignore: true,
+        },
+        ignores: ['https://accounts.google.com/v3/signin/identifier?continue=https%3A%2F%2Fmail.google.com%2F'],
+    },
+    {
+        rule: {
+            name: 'Microsoft sign-in',
+            match: 'login.microsoftonline.com/**',
+            ignore: true,
+        },
+        ignores: ['https://login.microsoftonline.com/common/oauth2/v2.0/authorize?client_id=x'],
+    },
+    {
+        rule: {
+            name: 'Okta sign-in',
+            match: '*.okta.com/**',
+            ignore: true,
+        },
+        ignores: ['https://example.okta.com/app/example/sso/saml', 'https://example.okta.com/login/login.htm'],
+    },
+    {
+        rule: {
+            name: 'GitHub sign-in',
+            match: 'github.com/login/**',
+            ignore: true,
+        },
+        ignores: ['https://github.com/login?return_to=%2Fowner%2Frepo', 'https://github.com/login/oauth/authorize?client_id=x'],
     },
 ];

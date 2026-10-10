@@ -20,6 +20,7 @@ function isExcludedUrl(url) {
 // - a URL covered by one of the `urlRules` (compiled by url-rules.js from the
 //   rules in the options page) is keyed by that rule, so for example every view
 //   of a GitHub pull request can collapse to the pull request itself;
+// - a URL covered by an ignore rule has no key at all, and null is returned;
 // - query strings are otherwise kept, so different searches stay different tabs.
 //
 // The steps above the rules are plain URL hygiene that holds for every site.
@@ -39,21 +40,26 @@ function normalizeUrl(url, urlRules = []) {
         parsed.search = '';
     }
 
-    const ruleKey = applyUrlRules(parsed, urlRules);
-    if (ruleKey !== null) {
-        return ruleKey;
+    const ruleResult = applyUrlRules(parsed, urlRules);
+    if (ruleResult?.ignored) {
+        return null;
+    }
+    if (ruleResult !== null) {
+        return ruleResult.key;
     }
 
     return parsed.toString();
 }
 
 // The comparison key for a tab, or null for a tab that cannot be compared: one
-// that has no URL yet (it is still starting), or one showing a page where
-// duplicates make no sense. Incognito tabs are only ever duplicates of other
-// incognito tabs.
+// that has no URL yet (it is still starting), one showing a page where
+// duplicates make no sense, or one an ignore rule covers. Incognito tabs are
+// only ever duplicates of other incognito tabs.
 function duplicateKey(tab, urlRules = []) {
     if (!tab || isExcludedUrl(tab.url)) return null;
-    return `${tab.incognito ? 'incognito' : 'normal'} ${normalizeUrl(tab.url, urlRules)}`;
+    const normalized = normalizeUrl(tab.url, urlRules);
+    if (normalized === null) return null;
+    return `${tab.incognito ? 'incognito' : 'normal'} ${normalized}`;
 }
 
 // Tab ids grow over a browser session, so the smallest id is the oldest tab.

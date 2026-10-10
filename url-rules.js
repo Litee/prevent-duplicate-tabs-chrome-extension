@@ -4,9 +4,13 @@
 // service worker loads this file with importScripts(), and url-rules.test.js
 // runs the same functions with plain node.
 //
-// Each rule has a `match` pattern and a `key` template. A URL that matches the
-// pattern is keyed by the expanded template, so two tabs whose URLs differ only
-// in the parts the template leaves out are duplicates of each other.
+// Each rule has a `match` pattern and either a `key` template or `ignore: true`.
+// A URL that matches the pattern is keyed by the expanded template, so two tabs
+// whose URLs differ only in the parts the template leaves out are duplicates of
+// each other. A URL that matches an ignore rule is never a duplicate at all:
+// sign-in pages are the reason, because tabs whose session ran out all reload
+// onto the same sign-in URL, and closing them as duplicates loses the pages
+// they were showing.
 //
 // The pattern language is deliberately smaller than regular expressions:
 //
@@ -132,11 +136,20 @@ function compileUrlRules(rules) {
     }
     return rules.map((rule, index) => {
         if (rule === null || typeof rule !== 'object' || Array.isArray(rule)) {
-            throw new Error(`URL rule #${index + 1}: a rule has to be an object with match and key`);
+            throw new Error(`URL rule #${index + 1}: a rule has to be an object with match and key, or match and ignore`);
         }
         const where = `URL rule ${JSON.stringify(rule.name ?? rule.match ?? `#${index + 1}`)}`;
-        if (typeof rule.match !== 'string' || typeof rule.key !== 'string' || !rule.match || !rule.key) {
-            throw new Error(`${where}: both match and key are required, as strings`);
+        if (typeof rule.match !== 'string' || !rule.match) {
+            throw new Error(`${where}: match is required, as a string`);
+        }
+        if (rule.ignore !== undefined && rule.ignore !== true) {
+            throw new Error(`${where}: ignore can only be true; leave it out for a rule with a key`);
+        }
+        if (rule.ignore === true && rule.key !== undefined) {
+            throw new Error(`${where}: a rule either ignores the URLs it matches or gives them a key, not both`);
+        }
+        if (rule.ignore !== true && (typeof rule.key !== 'string' || !rule.key)) {
+            throw new Error(`${where}: a key is required, as a string, unless the rule has "ignore": true`);
         }
 
         const [hostname, ...parts] = rule.match.split('/');
@@ -169,13 +182,13 @@ function compileUrlRules(rules) {
             return { kind: 'capture', ...placeholder };
         });
 
-        for (const name of keyTemplatePlaceholders(rule.key, where)) {
+        for (const name of rule.ignore ? [] : keyTemplatePlaceholders(rule.key, where)) {
             if (!captured.has(name)) {
                 throw new Error(`${where}: the key uses {${name}}, which the pattern never captures`);
             }
         }
 
-        return { name: rule.name, hostname: hostname.toLowerCase(), segments, key: rule.key };
+        return { name: rule.name, hostname: hostname.toLowerCase(), segments, key: rule.key, ignore: rule.ignore === true };
     });
 }
 
@@ -230,14 +243,15 @@ function expandKeyTemplate(template, captures) {
     return key;
 }
 
-// The key for a parsed URL according to the first of the compiled rules that
-// matches it, or null when none does and the URL should be keyed by itself.
+// What the first of the compiled rules that matches a parsed URL says about
+// it: `{ key }` to key it by, `{ ignored: true }` when it is never a duplicate,
+// or null when no rule matches and the URL should be keyed by itself.
 function applyUrlRules(parsed, rules) {
     const hostname = parsed.hostname.toLowerCase();
     for (const rule of rules) {
         const captures = matchUrlRule(rule, hostname, parsed.pathname);
         if (captures !== null) {
-            return expandKeyTemplate(rule.key, captures);
+            return rule.ignore ? { ignored: true } : { key: expandKeyTemplate(rule.key, captures) };
         }
     }
     return null;

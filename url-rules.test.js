@@ -16,13 +16,18 @@ const { applyUrlRules, compileUrlRules } = context;
 // A const in a script is not a property of the context, so it is fetched by name.
 const examples = vm.runInContext('URL_RULE_EXAMPLES', context);
 
-// The GitHub rules are the README's only ```json block, taken from there so
-// that the rules people copy into the options page are the rules tested here.
+// The GitHub and sign-in rules are the README's two ```json blocks, taken from
+// there so that the rules people copy into the options page are tested here.
 const readme = fs.readFileSync(path.join(__dirname, 'README.md'), 'utf8');
-const githubRules = JSON.parse(readme.match(/```json\n([\s\S]*?)```/)[1]);
+const [githubRules, signInRules] = [...readme.matchAll(/```json\n([\s\S]*?)```/g)].map(block => JSON.parse(block[1]));
 
-// The key a set of rules gives a URL, or null when none of them match it.
-const keyFor = (rules, url) => applyUrlRules(new URL(url), compileUrlRules(rules));
+// The key a set of rules gives a URL, IGNORED when an ignore rule covers it,
+// or null when none of them match it.
+const IGNORED = 'ignored';
+const keyFor = (rules, url) => {
+    const result = applyUrlRules(new URL(url), compileUrlRules(rules));
+    return result === null ? null : result.ignored ? IGNORED : result.key;
+};
 const githubKeyFor = url => keyFor(githubRules, url);
 const rule = (match, key) => [{ name: 'test', match, key }];
 
@@ -70,18 +75,35 @@ test('the README GitHub rules are the GitHub examples of the options page', () =
     assert.deepEqual(githubRules, JSON.parse(JSON.stringify(examples.slice(0, 2).map(example => example.rule))));
 });
 
-test('every example in the options page treats its two URLs as the same page', () => {
-    for (const { rule, sameAs } of examples) {
+test('the README sign-in rules are the ignore examples of the options page', () => {
+    const ignoreExamples = examples.filter(example => example.ignores).map(example => example.rule);
+    assert.deepEqual(signInRules, JSON.parse(JSON.stringify(ignoreExamples)));
+});
+
+test('every example in the options page does what it shows', () => {
+    for (const { rule, ignores } of examples.filter(example => example.ignores)) {
+        for (const url of ignores) {
+            assert.equal(keyFor([rule], url), IGNORED, `${rule.name}: ${url}`);
+        }
+    }
+    for (const { rule, sameAs } of examples.filter(example => example.sameAs)) {
         const [first, second] = sameAs.map(url => keyFor([rule], url));
         assert.notEqual(first, null, `${rule.name}: ${sameAs[0]}`);
         assert.equal(first, second, rule.name);
     }
 });
 
+test('every example shows either URLs it keys together or URLs it ignores', () => {
+    for (const { rule, sameAs, ignores } of examples) {
+        assert.equal(rule.ignore === true, ignores !== undefined, rule.name);
+        assert.equal(ignores === undefined, sameAs?.length === 2, rule.name);
+    }
+});
+
 test('the examples can be added together without catching each other\'s URLs', () => {
     const all = examples.map(example => example.rule);
-    for (const { rule, sameAs } of examples) {
-        for (const url of sameAs) {
+    for (const { rule, sameAs, ignores } of examples) {
+        for (const url of sameAs ?? ignores) {
             assert.equal(keyFor(all, url), keyFor([rule], url), `${rule.name}: ${url}`);
         }
     }
@@ -161,6 +183,23 @@ test('the first matching rule wins', () => {
     assert.equal(keyFor(rules, 'https://example.com/b/1'), 'general:b/1');
 });
 
+test('an ignore rule covers the URLs it matches, and the first matching rule wins', () => {
+    const signIn = [{ name: 'sign-in', match: 'login.example.com/**', ignore: true }];
+    assert.equal(keyFor(signIn, 'https://login.example.com/'), IGNORED);
+    assert.equal(keyFor(signIn, 'https://login.example.com/sso/start?return=/a'), IGNORED);
+    assert.equal(keyFor(signIn, 'https://example.com/login'), null);
+
+    // Ahead of a broader key rule, it carves pages out of what that rule keys.
+    const ordered = [
+        { name: 'sign-in', match: 'example.com/login/**', ignore: true },
+        { name: 'everything', match: 'example.com/{section}/**', key: 'k:{section}' },
+    ];
+    assert.equal(keyFor(ordered, 'https://example.com/login/callback'), IGNORED);
+    assert.equal(keyFor(ordered, 'https://example.com/docs/a'), 'k:docs');
+    // Behind it, the broader rule gets there first.
+    assert.equal(keyFor([...ordered].reverse(), 'https://example.com/login/callback'), 'k:login');
+});
+
 test('a rule table that cannot be understood is rejected when it is compiled', () => {
     const rejected = [
         ['** in the middle', 'example.com/**/{id}', 'id={id}'],
@@ -181,6 +220,16 @@ test('a rule table that cannot be understood is rejected when it is compiled', (
         ['an empty class', 'example.com/{id:[]+}', 'id={id}'],
         ['a backwards range', 'example.com/{id:[9-0]+}', 'id={id}'],
     ];
+
+    for (const [why, broken] of [
+        ['ignore that is not true', { match: 'example.com/**', ignore: 'yes' }],
+        ['ignore set to false', { match: 'example.com/**', ignore: false }],
+        ['both ignore and a key', { match: 'example.com/**', ignore: true, key: 'k' }],
+        ['ignore without a pattern', { ignore: true }],
+        ['a broken pattern in an ignore rule', { match: 'example.com/**/a', ignore: true }],
+    ]) {
+        assert.throws(() => compileUrlRules([{ name: why, ...broken }]), /URL rule/, why);
+    }
     for (const [why, match, key] of rejected) {
         assert.throws(() => compileUrlRules([{ name: why, match, key }]), /URL rule/, why);
     }
